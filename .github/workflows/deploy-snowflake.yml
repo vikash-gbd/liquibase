@@ -2,15 +2,13 @@ name: Deploy to Snowflake
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     env:
-      LIQUIBASE_INSTALL_DIR: ${{ github.workspace }}/liquibase-cli
       SF_URL: ${{ secrets.SF_URL }}
       SF_USER: ${{ secrets.SF_USER }}
       SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
@@ -31,33 +29,33 @@ jobs:
 
       - name: Download & unpack Liquibase CLI
         run: |
-          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz \
-           -o liquibase.tar.gz
+          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz -o liquibase.tar.gz
           mkdir -p liquibase-cli
           tar -xzf liquibase.tar.gz -C liquibase-cli --strip-components=1
-          chmod +x liquibase-cli/liquibase
 
-      - name: Verify Liquibase version
+      - name: 🔍 Debug listing
         run: |
-          liquibase-cli/liquibase --version
+          echo "=== Files in liquibase-cli ==="
+          find liquibase-cli -maxdepth 2 -type f | sed 's/^/FILE: /'
 
-      - name: Dry run (first run only)
+      - name: Make Liquibase executable & verify
+        run: |
+          LB=$(find liquibase-cli -type f -name 'liquibase' | head -n1)
+          echo "Found Liquibase binary: $LB"
+          chmod +x "$LB"
+          "$LB" --version
+
+      - name: Dry Run SQL (first run)
         if: github.run_number == 1
         run: |
-          liquibase-cli/liquibase \
-            --defaultsFile=liquibase.properties \
-            updateSql > dry-run-output.sql
+          "$LB" --defaultsFile=liquibase.properties updateSql > dry-run-output.sql
 
       - name: Sync changelog (first run only)
         if: github.run_number == 1
         run: |
-          liquibase-cli/liquibase \
-            --defaultsFile=liquibase.properties \
-            changelogSync
+          "$LB" --defaultsFile=liquibase.properties changelogSync
 
-      - name: Deployment (subsequent runs)
+      - name: Run actual deployment (subsequent runs)
         if: github.run_number != 1
         run: |
-          liquibase-cli/liquibase \
-            --defaultsFile=liquibase.properties \
-            update
+          "$LB" --defaultsFile=liquibase.properties update
