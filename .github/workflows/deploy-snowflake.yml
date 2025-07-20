@@ -9,7 +9,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -17,17 +18,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Download Liquibase ZIP
+      - name: Download Liquibase CLI
         run: |
           curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
-          mkdir liquibase-cli
+          mkdir -p liquibase-cli
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
       - name: Verify Liquibase version
         run: liquibase-cli/liquibase --version
 
-      - name: Dry Run / Deploy to Snowflake
+      - name: Dry Run / Deploy on Snowflake
+        # 🔧 Ensure we're in the repo root where `changelog/` exists
         working-directory: ${{ github.workspace }}
         env:
           SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
@@ -53,11 +55,15 @@ jobs:
             --password='$ESC_PASSWORD' \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver"
 
+          echo "🔧 Testing connection"
           eval "$LB_CMD status" || exit 1
 
           if [ "${{ github.run_number }}" = "1" ]; then
+            echo "🧪 Dry-run"
             eval "$LB_CMD updateSql" > dry-run-output.sql
+            echo "🔁 Syncing changelog"
             eval "$LB_CMD changelogSync"
           else
+            echo "🚀 Applying changes"
             eval "$LB_CMD update"
           fi
