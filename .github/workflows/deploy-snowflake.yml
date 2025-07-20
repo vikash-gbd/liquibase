@@ -2,7 +2,7 @@ name: Deploy to Snowflake
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
   deploy:
@@ -48,20 +48,20 @@ jobs:
           ESC_PASSWORD=$(printf '%q' "$SF_PASSWORD")
 
           LB_CMD="liquibase-cli/liquibase \
-            --search-path='.' \
-            --changelog-file=changelog/liquibase-master.xml \
+            --search-path='liquibase/changelog' \
+            --changelog-file=liquibase-master.xml \
             --url=\"$URL\" \
             --username='$SF_USER' \
             --password='$ESC_PASSWORD' \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver"
 
-          echo "🔧 Checking connectivity"
-          eval "$LB_CMD status" || { echo "❌ Cannot locate changelog or DB unreachable"; exit 1; }
+          echo "🔧 Testing connection and changelog lookup"
+          eval "$LB_CMD status" || { echo "❌ Connection or changelog lookup failed"; exit 1; }
 
           if [ "${{ github.run_number }}" = "1" ]; then
             echo "🧪 Dry-run SQL"
             eval "$LB_CMD updateSql" > dry-run-output.sql
-            echo "🔁 Sync changelog"
+            echo "🔁 Syncing changelog"
             eval "$LB_CMD changelogSync"
           else
             echo "🚀 Applying changes"
