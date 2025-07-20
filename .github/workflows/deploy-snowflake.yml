@@ -34,35 +34,37 @@ jobs:
           chmod +x liquibase-cli/liquibase
 
       - name: Verify Liquibase version
-        run: |
-          liquibase-cli/liquibase --version
+        run: liquibase-cli/liquibase --version
 
       - name: Dry Run SQL (first run)
         if: github.run_number == 1
         run: |
           liquibase-cli/liquibase \
             --changelog-file=changelog/liquibase-master.xml \
-            --url="${{ secrets.SF_URL }}" \
+            --url="jdbc:snowflake://${{ secrets.SF_URL }}/?warehouse=${{ secrets.SF_WAREHOUSE }}&db=${{ secrets.SF_DATABASE }}&schema=${{ secrets.SF_SCHEMA }}&role=${{ secrets.SF_ROLE }}" \
             --username="${{ secrets.SF_USER }}" \
             --password="${{ secrets.SF_PASSWORD }}" \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             updateSql > dry-run-output.sql
 
-      - name: Sync changelog (first run only)
+      - name: Sync changelog (first run)
         if: github.run_number == 1
         run: |
           liquibase-cli/liquibase \
             --changelog-file=changelog/liquibase-master.xml \
-            --url="${{ secrets.SF_URL }}" \
+            --url="jdbc:snowflake://${{ secrets.SF_URL }}/?warehouse=${{ secrets.SF_WAREHOUSE }}&db=${{ secrets.SF_DATABASE }}&schema=${{ secrets.SF_SCHEMA }}&role=${{ secrets.SF_ROLE }}" \
             --username="${{ secrets.SF_USER }}" \
             --password="${{ secrets.SF_PASSWORD }}" \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             changelogSync
 
-      - name: Run actual deployment (subsequent runs)
+      - name: Run actual deployment
         if: github.run_number != 1
         run: |
           liquibase-cli/liquibase \
             --changelog-file=changelog/liquibase-master.xml \
-            --url="${{ secrets.SF_URL }}" \
+            --url="jdbc:snowflake://${{ secrets.SF_URL }}/?warehouse=${{ secrets.SF_WAREHOUSE }}&db=${{ secrets.SF_DATABASE }}&schema=${{ secrets.SF_SCHEMA }}&role=${{ secrets.SF_ROLE }}" \
             --username="${{ secrets.SF_USER }}" \
             --password="${{ secrets.SF_PASSWORD }}" \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             update
