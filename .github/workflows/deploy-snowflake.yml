@@ -7,8 +7,10 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -36,7 +38,7 @@ jobs:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
         run: |
-          # Validate SF_ACCOUNT
+          # Ensure SF_ACCOUNT is set
           if [ -z "$SF_ACCOUNT" ]; then
             echo "❌ ERROR: SF_ACCOUNT secret missing!"
             exit 1
@@ -45,38 +47,25 @@ jobs:
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
           echo "🔗 Connecting to: $URL"
 
-          # Test connectivity
-          liquibase-cli/liquibase \
+          # Escape password to preserve special characters
+          ESC_PASSWORD=$(printf '%q' "$SF_PASSWORD")
+          echo "🔐 Escaped password for shell usage"
+
+          # Build Liquibase base command
+          LB_CMD="liquibase-cli/liquibase \
             --changelog-file=changelog/liquibase-master.xml \
-            --url="$URL" \
-            --username="'$SF_USER'" \
-            --password="'$SF_PASSWORD'" \
-            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-            status || exit 1
+            --url=\"$URL\" \
+            --username='$SF_USER' \
+            --password='$ESC_PASSWORD' \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver"
 
-          # Dry run first run, else deploy
+          # Test connectivity
+          eval "$LB_CMD status" || exit 1
+
+          # Execute dry-run on first run, else deploy
           if [ "${{ github.run_number }}" = "1" ]; then
-            liquibase-cli/liquibase \
-              --changelog-file=changelog/liquibase-master.xml \
-              --url="$URL" \
-              --username="'$SF_USER'" \
-              --password="'$SF_PASSWORD'" \
-              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              updateSql > dry-run-output.sql
-
-            liquibase-cli/liquibase \
-              --changelog-file=changelog/liquibase-master.xml \
-              --url="$URL" \
-              --username="'$SF_USER'" \
-              --password="'$SF_PASSWORD'" \
-              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              changelogSync
+            eval "$LB_CMD updateSql" > dry-run-output.sql
+            eval "$LB_CMD changelogSync"
           else
-            liquibase-cli/liquibase \
-              --changelog-file=changelog/liquibase-master.xml \
-              --url="$URL" \
-              --username="'$SF_USER'" \
-              --password="'$SF_PASSWORD'" \
-              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              update
+            eval "$LB_CMD update"
           fi
