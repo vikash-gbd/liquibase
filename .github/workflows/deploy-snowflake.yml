@@ -27,35 +27,31 @@ jobs:
           java-version: 17
           distribution: temurin
 
-      - name: Download & unpack Liquibase CLI
+      - name: Download Liquibase ZIP
         run: |
-          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz -o liquibase.tar.gz
-          mkdir -p liquibase-cli
-          tar -xzf liquibase.tar.gz -C liquibase-cli --strip-components=1
+          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
+          mkdir liquibase-cli
+          unzip -q liquibase.zip -d liquibase-cli
+          chmod +x liquibase-cli/liquibase
 
-      - name: 🔍 Debug listing
+      - name: Verify Liquibase version
         run: |
-          echo "=== Files in liquibase-cli ==="
-          find liquibase-cli -maxdepth 2 -type f | sed 's/^/FILE: /'
-
-      - name: Make Liquibase executable & verify
-        run: |
-          LB=$(find liquibase-cli -type f -name 'liquibase' | head -n1)
-          echo "Found Liquibase binary: $LB"
-          chmod +x "$LB"
-          "$LB" --version
+          liquibase-cli/liquibase --version
 
       - name: Dry Run SQL (first run)
         if: github.run_number == 1
         run: |
-          "$LB" --defaultsFile=liquibase.properties updateSql > dry-run-output.sql
+          liquibase-cli/liquibase \
+            --defaultsFile=liquibase.properties updateSql > dry-run-output.sql
 
       - name: Sync changelog (first run only)
         if: github.run_number == 1
         run: |
-          "$LB" --defaultsFile=liquibase.properties changelogSync
+          liquibase-cli/liquibase \
+            --defaultsFile=liquibase.properties changelogSync
 
       - name: Run actual deployment (subsequent runs)
         if: github.run_number != 1
         run: |
-          "$LB" --defaultsFile=liquibase.properties update
+          liquibase-cli/liquibase \
+            --defaultsFile=liquibase.properties update
