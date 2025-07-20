@@ -2,33 +2,32 @@ name: Deploy to Snowflake
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
       - name: Download Liquibase ZIP
         run: |
           curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
-          mkdir liquibase-cli
+          mkdir -p liquibase-cli
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
       - name: Verify Liquibase version
         run: liquibase-cli/liquibase --version
 
-      - name: Dry Run / Deploy on Snowflake
+      - name: Dry Run / Deploy
         env:
           SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
           SF_DATABASE: ${{ secrets.SF_DATABASE }}
@@ -43,7 +42,7 @@ jobs:
             exit 1
           fi
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
-          echo "🔗 Using URL: $URL"
+          echo "🔗 Connecting to: $URL"
           if [ "${{ github.run_number }}" = "1" ]; then
             liquibase-cli/liquibase \
               --changelog-file=changelog/liquibase-master.xml \
