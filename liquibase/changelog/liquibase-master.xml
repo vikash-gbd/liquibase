@@ -6,13 +6,13 @@
       http://www.liquibase.org/xml/ns/dbchangelog
       http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
-    <!-- Include your XML changelogs -->
+    <!-- Your XML-based changelogs (tables, functions) -->
     <include file="liquibase-tables.xml" relativeToChangelogFile="true"/>
     <include file="liquibase-functions.xml" relativeToChangelogFile="true"/>
 
-    <!-- Include all .sql under ddl/DEMO_SCHEMA/function -->
+    <!-- Include all SQL in your function folder by letting the CLI search it -->
     <includeAll 
-        path="../../ddl/DEMO_SCHEMA/function" 
-        relativeToChangelogFile="true"
+        path="ddl/DEMO_SCHEMA/function" 
+        relativeToChangelogFile="false"
         errorIfMissingOrEmpty="false"/>
 </databaseChangeLog>

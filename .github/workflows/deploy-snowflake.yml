@@ -9,8 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -25,10 +24,10 @@ jobs:
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
-      - name: Verify Liquibase version
+      - name: Verify Liquibase
         run: liquibase-cli/liquibase --version
 
-      - name: Dry Run / Deploy to Snowflake
+      - name: Dry Run / Deploy
         working-directory: ${{ github.workspace }}
         env:
           SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
@@ -39,36 +38,26 @@ jobs:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
         run: |
-          # Validate SF_ACCOUNT
-          if [ -z "$SF_ACCOUNT" ]; then
-            echo "❌ SF_ACCOUNT missing!"
-            exit 1
-          fi
-
-          # Build JDBC URL
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
-          ESC_PASSWORD=$(printf '%q' "$SF_PASSWORD")
+          ESC_PW=$(printf '%q' "$SF_PASSWORD")
 
-          # Base Liquibase command (search only your changelog folder)
-          LB_CMD="liquibase-cli/liquibase \
-            --search-path='liquibase/changelog' \
+          BASE_CMD="liquibase-cli/liquibase \
+            --search-path='liquibase/changelog,ddl/DEMO_SCHEMA/function' \
             --changelog-file=liquibase-master.xml \
             --url=\"$URL\" \
             --username='$SF_USER' \
-            --password='$ESC_PASSWORD' \
+            --password='$ESC_PW' \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver"
 
-          # Test connectivity & changelog parsing
-          echo "🔧 Testing connection & changelog parsing"
-          eval "$LB_CMD status" || { echo "❌ Connection or changelog parsing failed"; exit 1; }
+          echo "🔧 Validating changelogs & connection"
+          eval "$BASE_CMD status" || { echo "❌ Failed to locate changelogs or connect"; exit 1; }
 
-          # Dry-run on first run, else apply
           if [ "${{ github.run_number }}" = "1" ]; then
             echo "🧪 Dry-run"
-            eval "$LB_CMD updateSql" > dry-run-output.sql
-            echo "🔁 Sync changelog"
-            eval "$LB_CMD changelogSync"
+            eval "$BASE_CMD updateSql" > dry-run-output.sql
+            echo "🔁 Sync"
+            eval "$BASE_CMD changelogSync"
           else
-            echo "🚀 Applying migrations"
-            eval "$LB_CMD update"
+            echo "🚀 Deploy"
+            eval "$BASE_CMD update"
           fi
