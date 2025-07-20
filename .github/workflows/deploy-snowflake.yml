@@ -9,7 +9,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -19,45 +20,57 @@ jobs:
 
       - name: Download Liquibase CLI
         run: |
-          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip \
-            -o liquibase.zip
+          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
-      - name: Verify Liquibase
+      - name: Verify Liquibase version
         run: liquibase-cli/liquibase --version
 
-      - name: Dry Run / Deploy
+      - name: Dry Run / Deploy to Snowflake
         working-directory: ${{ github.workspace }}
         env:
-          SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
-          SF_DATABASE: ${{ secrets.SF_DATABASE }}
-          SF_SCHEMA: ${{ secrets.SF_SCHEMA }}
-          SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
-          SF_ROLE: ${{ secrets.SF_ROLE }}
-          SF_USER: ${{ secrets.SF_USER }}
-          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
+          SF_ACCOUNT:    ${{ secrets.SF_ACCOUNT }}    # e.g. EQNVJAL-AJB41054
+          SF_DATABASE:   ${{ secrets.SF_DATABASE }}
+          SF_SCHEMA:     ${{ secrets.SF_SCHEMA }}
+          SF_WAREHOUSE:  ${{ secrets.SF_WAREHOUSE }}
+          SF_ROLE:       ${{ secrets.SF_ROLE }}
+          SF_USER:       ${{ secrets.SF_USER }}
+          SF_PASSWORD:   ${{ secrets.SF_PASSWORD }}
         run: |
+          # Fail fast if SF_ACCOUNT is missing
+          if [ -z "$SF_ACCOUNT" ]; then
+            echo "❌ ERROR: SF_ACCOUNT secret is not set"
+            exit 1
+          fi
+
+          # Build JDBC URL
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
           ESC_PW=$(printf '%q' "$SF_PASSWORD")
 
+          # Base Liquibase command:
+          # - search only the repo root so includeAll paths in XML work as-is
+          # - point to the master changelog under liquibase/changelog
           BASE_CMD="liquibase-cli/liquibase \
-            --search-path='liquibase/changelog,ddl/DEMO_SCHEMA/function' \
-            --changelog-file=liquibase-master.xml \
+            --search-path='.' \
+            --changelog-file=liquibase/changelog/liquibase-master.xml \
             --url=\"$URL\" \
             --username='$SF_USER' \
             --password='$ESC_PW' \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver"
 
+          # Quick connectivity & changelog parse check
           echo "🔧 Validating changelogs & connection"
-          eval "$BASE_CMD status" || { echo "❌ Failed to locate changelogs or connect"; exit 1; }
+          eval "$BASE_CMD status" \
+            || { echo "❌ Cannot parse changelogs or connect to Snowflake"; exit 1; }
 
+          # On first workflow run => dry-run + sync; later runs => apply
           if [ "${{ github.run_number }}" = "1" ]; then
-            echo "🧪 Dry-run"
+            echo "🧪 Performing dry-run"
             eval "$BASE_CMD updateSql" > dry-run-output.sql
-            echo "🔁 Sync"
+            echo "🔁 Syncing changelog checksums"
             eval "$BASE_CMD changelogSync"
           else
-            echo "🚀 Deploy"
+            echo "🚀 Applying migrations"
             eval "$BASE_CMD update"
           fi
