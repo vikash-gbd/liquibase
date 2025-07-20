@@ -17,7 +17,6 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'none'
 
       - name: Download Liquibase ZIP
         run: |
@@ -39,8 +38,8 @@ jobs:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
         run: |
-          export URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
-          if [ "${{ github.run_number }}" -eq "1" ]; then
+          URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
+          if [ "${{ github.run_number }}" = "1" ]; then
             liquibase-cli/liquibase \
               --changelog-file=changelog/liquibase-master.xml \
               --url="$URL" \
@@ -48,6 +47,7 @@ jobs:
               --password="$SF_PASSWORD" \
               --driver=net.snowflake.client.jdbc.SnowflakeDriver \
               updateSql > dry-run-output.sql
+
             liquibase-cli/liquibase \
               --changelog-file=changelog/liquibase-master.xml \
               --url="$URL" \
