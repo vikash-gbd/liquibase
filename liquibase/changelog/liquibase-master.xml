@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <databaseChangeLog
-  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="
-    http://www.liquibase.org/xml/ns/dbchangelog
-    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="
+      http://www.liquibase.org/xml/ns/dbchangelog
+      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
-  <include file="liquibase-tables.xml" relativeToChangelogFile="true"/>
-  <include file="liquibase-functions.xml" relativeToChangelogFile="true"/>
+    <!-- Include your XML changelogs -->
+    <include file="liquibase-tables.xml" relativeToChangelogFile="true"/>
+    <include file="liquibase-functions.xml" relativeToChangelogFile="true"/>
 
-  <!-- Include all SQL scripts in your function folder -->
-  <includeAll path="../../ddl/DEMO_SCHEMA/function"
-              relativeToChangelogFile="true"
-              errorIfMissingOrEmpty="false"/>
+    <!-- Include all .sql under ddl/DEMO_SCHEMA/function -->
+    <includeAll 
+        path="../../ddl/DEMO_SCHEMA/function" 
+        relativeToChangelogFile="true"
+        errorIfMissingOrEmpty="false"/>
 </databaseChangeLog>
