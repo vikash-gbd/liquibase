@@ -7,64 +7,38 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     env:
-      SF_URL: ${{ secrets.SF_URL }}
-      SF_USER: ${{ secrets.SF_USER }}
-      SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
-      SF_ROLE: ${{ secrets.SF_ROLE }}
+      SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}       # account identifier, e.g. xy12345.us-west-2
       SF_DATABASE: ${{ secrets.SF_DATABASE }}
       SF_SCHEMA: ${{ secrets.SF_SCHEMA }}
       SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
+      SF_ROLE: ${{ secrets.SF_ROLE }}
+      SF_USER: ${{ secrets.SF_USER }}
+      SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v3
+      - uses: actions/setup-java@v3
         with:
           java-version: 17
-          distribution: temurin
 
-      - name: Download Liquibase ZIP
-        run: |
+      - run: |
           curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
-          mkdir liquibase-cli
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
-      - name: Verify Liquibase version
-        run: liquibase-cli/liquibase --version
+      - run: liquibase-cli/liquibase --version
 
-      - name: Dry Run SQL (first run)
-        if: github.run_number == 1
+      - name: Deploy or Dry-Run
         run: |
           liquibase-cli/liquibase \
             --changelog-file=changelog/liquibase-master.xml \
-            --url="jdbc:snowflake://${{ secrets.SF_URL }}/?warehouse=${{ secrets.SF_WAREHOUSE }}&db=${{ secrets.SF_DATABASE }}&schema=${{ secrets.SF_SCHEMA }}&role=${{ secrets.SF_ROLE }}" \
-            --username="${{ secrets.SF_USER }}" \
-            --password="${{ secrets.SF_PASSWORD }}" \
+            --url="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}" \
+            --username="${SF_USER}" \
+            --password="${SF_PASSWORD}" \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-            updateSql > dry-run-output.sql
+            $(if [ "${{ github.run_number }}" == "1" ]; then echo updateSql; else echo update; fi)
+            > $([[ "${{ github.run_number }}" == "1" ]] && echo dry-run-output.sql || cat)
 
-      - name: Sync changelog (first run)
-        if: github.run_number == 1
-        run: |
-          liquibase-cli/liquibase \
-            --changelog-file=changelog/liquibase-master.xml \
-            --url="jdbc:snowflake://${{ secrets.SF_URL }}/?warehouse=${{ secrets.SF_WAREHOUSE }}&db=${{ secrets.SF_DATABASE }}&schema=${{ secrets.SF_SCHEMA }}&role=${{ secrets.SF_ROLE }}" \
-            --username="${{ secrets.SF_USER }}" \
-            --password="${{ secrets.SF_PASSWORD }}" \
-            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-            changelogSync
-
-      - name: Run actual deployment
-        if: github.run_number != 1
-        run: |
-          liquibase-cli/liquibase \
-            --changelog-file=changelog/liquibase-master.xml \
-            --url="jdbc:snowflake://${{ secrets.SF_URL }}/?warehouse=${{ secrets.SF_WAREHOUSE }}&db=${{ secrets.SF_DATABASE }}&schema=${{ secrets.SF_SCHEMA }}&role=${{ secrets.SF_ROLE }}" \
-            --username="${{ secrets.SF_USER }}" \
-            --password="${{ secrets.SF_PASSWORD }}" \
-            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-            update
