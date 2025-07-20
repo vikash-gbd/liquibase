@@ -7,7 +7,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     env:
       SF_URL: ${{ secrets.SF_URL }}
       SF_USER: ${{ secrets.SF_USER }}
@@ -42,16 +41,28 @@ jobs:
         if: github.run_number == 1
         run: |
           liquibase-cli/liquibase \
-            --defaultsFile=liquibase.properties updateSql > dry-run-output.sql
+            --changelog-file=changelog/liquibase-master.xml \
+            --url="${{ secrets.SF_URL }}" \
+            --username="${{ secrets.SF_USER }}" \
+            --password="${{ secrets.SF_PASSWORD }}" \
+            updateSql > dry-run-output.sql
 
       - name: Sync changelog (first run only)
         if: github.run_number == 1
         run: |
           liquibase-cli/liquibase \
-            --defaultsFile=liquibase.properties changelogSync
+            --changelog-file=changelog/liquibase-master.xml \
+            --url="${{ secrets.SF_URL }}" \
+            --username="${{ secrets.SF_USER }}" \
+            --password="${{ secrets.SF_PASSWORD }}" \
+            changelogSync
 
       - name: Run actual deployment (subsequent runs)
         if: github.run_number != 1
         run: |
           liquibase-cli/liquibase \
-            --defaultsFile=liquibase.properties update
+            --changelog-file=changelog/liquibase-master.xml \
+            --url="${{ secrets.SF_URL }}" \
+            --username="${{ secrets.SF_USER }}" \
+            --password="${{ secrets.SF_PASSWORD }}" \
+            update
