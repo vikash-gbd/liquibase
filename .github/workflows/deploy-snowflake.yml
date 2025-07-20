@@ -9,8 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -18,17 +17,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Download Liquibase CLI
+      - name: Download Liquibase ZIP
         run: |
           curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
-          mkdir -p liquibase-cli
+          mkdir liquibase-cli
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
       - name: Verify Liquibase version
         run: liquibase-cli/liquibase --version
 
-      - name: Deploy to Snowflake
+      - name: Dry Run / Deploy to Snowflake
+        working-directory: ${{ github.workspace }}
         env:
           SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
           SF_DATABASE: ${{ secrets.SF_DATABASE }}
@@ -44,28 +44,20 @@ jobs:
           fi
 
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
-          echo "🔗 Connecting to $URL"
-
-          # Backslash-escape password to preserve special characters ($, !, & etc.)
           ESC_PASSWORD=$(printf '%q' "$SF_PASSWORD")
-          echo "🔐 Password escaped"
-
-          LB="liquibase-cli/liquibase \
+          LB_CMD="liquibase-cli/liquibase \
+            --search-path='.' \
             --changelog-file=changelog/liquibase-master.xml \
             --url=\"$URL\" \
             --username='$SF_USER' \
             --password='$ESC_PASSWORD' \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver"
 
-          echo "🔧 Testing connection"
-          eval "$LB status" || { echo "❌ Connection failed"; exit 1; }
+          eval "$LB_CMD status" || exit 1
 
           if [ "${{ github.run_number }}" = "1" ]; then
-            echo "🧪 Dry-run"
-            eval "$LB updateSql" > dry-run-output.sql
-            echo "🔁 Syncing changelog"
-            eval "$LB changelogSync"
+            eval "$LB_CMD updateSql" > dry-run-output.sql
+            eval "$LB_CMD changelogSync"
           else
-            echo "🚀 Running update"
-            eval "$LB update"
+            eval "$LB_CMD update"
           fi
