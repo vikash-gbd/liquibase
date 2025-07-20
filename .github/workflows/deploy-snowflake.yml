@@ -2,7 +2,7 @@ name: Deploy to Snowflake
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
   deploy:
@@ -21,14 +21,14 @@ jobs:
       - name: Download Liquibase ZIP
         run: |
           curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
-          mkdir -p liquibase-cli
+          mkdir liquibase-cli
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
       - name: Verify Liquibase version
         run: liquibase-cli/liquibase --version
 
-      - name: Dry Run or Deploy
+      - name: Dry Run / Deploy on Snowflake
         env:
           SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
           SF_DATABASE: ${{ secrets.SF_DATABASE }}
@@ -38,7 +38,12 @@ jobs:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
         run: |
+          if [ -z "$SF_ACCOUNT" ]; then
+            echo "❌ ERROR: SF_ACCOUNT secret missing!"
+            exit 1
+          fi
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
+          echo "🔗 Using URL: $URL"
           if [ "${{ github.run_number }}" = "1" ]; then
             liquibase-cli/liquibase \
               --changelog-file=changelog/liquibase-master.xml \
@@ -47,7 +52,6 @@ jobs:
               --password="$SF_PASSWORD" \
               --driver=net.snowflake.client.jdbc.SnowflakeDriver \
               updateSql > dry-run-output.sql
-
             liquibase-cli/liquibase \
               --changelog-file=changelog/liquibase-master.xml \
               --url="$URL" \
