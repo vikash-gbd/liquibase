@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Java 17
@@ -28,8 +28,7 @@ jobs:
       - name: Verify Liquibase version
         run: liquibase-cli/liquibase --version
 
-      - name: Dry Run / Deploy on Snowflake
-        # 🔧 Ensure we're in the repo root where `changelog/` exists
+      - name: Dry Run / Deploy to Snowflake
         working-directory: ${{ github.workspace }}
         env:
           SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
@@ -41,12 +40,13 @@ jobs:
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
         run: |
           if [ -z "$SF_ACCOUNT" ]; then
-            echo "❌ ERROR: SF_ACCOUNT secret missing!"
+            echo "❌ SF_ACCOUNT not set!"
             exit 1
           fi
 
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
           ESC_PASSWORD=$(printf '%q' "$SF_PASSWORD")
+
           LB_CMD="liquibase-cli/liquibase \
             --search-path='.' \
             --changelog-file=changelog/liquibase-master.xml \
@@ -55,13 +55,13 @@ jobs:
             --password='$ESC_PASSWORD' \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver"
 
-          echo "🔧 Testing connection"
-          eval "$LB_CMD status" || exit 1
+          echo "🔧 Checking connectivity"
+          eval "$LB_CMD status" || { echo "❌ Cannot locate changelog or DB unreachable"; exit 1; }
 
           if [ "${{ github.run_number }}" = "1" ]; then
-            echo "🧪 Dry-run"
+            echo "🧪 Dry-run SQL"
             eval "$LB_CMD updateSql" > dry-run-output.sql
-            echo "🔁 Syncing changelog"
+            echo "🔁 Sync changelog"
             eval "$LB_CMD changelogSync"
           else
             echo "🚀 Applying changes"
