@@ -2,28 +2,62 @@ name: Deploy to Snowflake
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      LIQUIBASE_INSTALL_DIR: ${{ github.workspace }}/liquibase-cli
+      SF_URL: ${{ secrets.SF_URL }}
+      SF_USER: ${{ secrets.SF_USER }}
+      SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
+      SF_ROLE: ${{ secrets.SF_ROLE }}
+      SF_DATABASE: ${{ secrets.SF_DATABASE }}
+      SF_SCHEMA: ${{ secrets.SF_SCHEMA }}
+      SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Liquibase Update (dry-run or actual)
-        uses: liquibase-github-actions/update@v4.33.0
+      - name: Set up Java 17
+        uses: actions/setup-java@v3
         with:
-          operation: ${{ github.run_number == 1 && 'updateSQL' || 'update' }}
-          changelogFile: 'changelog/liquibase-master.xml'
-          classpath: '.'  # include all SQL changelogs
-          url: ${{ secrets.SF_URL }}
-          username: ${{ secrets.SF_USER }}
-          password: ${{ secrets.SF_PASSWORD }}
-          defaultSchemaName: ${{ secrets.SF_SCHEMA }}
-          defaultCatalogName: ${{ secrets.SF_DATABASE }}
-          driver: 'net.snowflake.client.jdbc.SnowflakeDriver'
-          logLevel: INFO
-        env:
-          LIQUIBASE_HOME: /github/home/.liquibase
+          java-version: 17
+          distribution: temurin
+
+      - name: Download & unpack Liquibase CLI
+        run: |
+          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz \
+           -o liquibase.tar.gz
+          mkdir -p liquibase-cli
+          tar -xzf liquibase.tar.gz -C liquibase-cli --strip-components=1
+          chmod +x liquibase-cli/liquibase
+
+      - name: Verify Liquibase version
+        run: |
+          liquibase-cli/liquibase --version
+
+      - name: Dry run (first run only)
+        if: github.run_number == 1
+        run: |
+          liquibase-cli/liquibase \
+            --defaultsFile=liquibase.properties \
+            updateSql > dry-run-output.sql
+
+      - name: Sync changelog (first run only)
+        if: github.run_number == 1
+        run: |
+          liquibase-cli/liquibase \
+            --defaultsFile=liquibase.properties \
+            changelogSync
+
+      - name: Deployment (subsequent runs)
+        if: github.run_number != 1
+        run: |
+          liquibase-cli/liquibase \
+            --defaultsFile=liquibase.properties \
+            update
