@@ -2,11 +2,17 @@
 <databaseChangeLog
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
-    <!-- Load tables and functions from the same directory -->
+    <!-- Include XML changelogs -->
     <include file="liquibase-tables.xml" relativeToChangelogFile="true"/>
     <include file="liquibase-functions.xml" relativeToChangelogFile="true"/>
 
+    <!-- Include all SQL files in function folder -->
+    <includeAll 
+        path="../../ddl/DEMO_SCHEMA/function" 
+        relativeToChangelogFile="true"
+        errorIfMissingOrEmpty="false"/>
 </databaseChangeLog>

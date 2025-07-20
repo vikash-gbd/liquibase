@@ -48,7 +48,7 @@ jobs:
           ESC_PASSWORD=$(printf '%q' "$SF_PASSWORD")
 
           LB="liquibase-cli/liquibase \
-            --search-path='liquibase/changelog' \
+            --search-path='liquibase/changelog,ddl/DEMO_SCHEMA/function' \
             --changelog-file=liquibase-master.xml \
             --url=\"$URL\" \
             --username='$SF_USER' \
@@ -59,7 +59,7 @@ jobs:
           eval "$LB status" || { echo "❌ lookup or connection failed"; exit 1; }
 
           if [ "${{ github.run_number }}" = "1" ]; then
-            echo "🧪 Performing dry-run"
+            echo "🧪 Dry-run"
             eval "$LB updateSql" > dry-run-output.sql
             echo "🔁 Syncing changelog"
             eval "$LB changelogSync"
