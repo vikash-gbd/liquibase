@@ -2,7 +2,7 @@ name: Deploy to Snowflake
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   deploy:
@@ -40,14 +40,14 @@ jobs:
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
         run: |
           if [ -z "$SF_ACCOUNT" ]; then
-            echo "❌ SF_ACCOUNT not set!"
+            echo "❌ SF_ACCOUNT missing!"
             exit 1
           fi
 
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
           ESC_PASSWORD=$(printf '%q' "$SF_PASSWORD")
 
-          LB_CMD="liquibase-cli/liquibase \
+          LB="liquibase-cli/liquibase \
             --search-path='liquibase/changelog' \
             --changelog-file=liquibase-master.xml \
             --url=\"$URL\" \
@@ -55,15 +55,15 @@ jobs:
             --password='$ESC_PASSWORD' \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver"
 
-          echo "🔧 Testing connection and changelog lookup"
-          eval "$LB_CMD status" || { echo "❌ Connection or changelog lookup failed"; exit 1; }
+          echo "🔧 Testing changelog lookup and DB connection"
+          eval "$LB status" || { echo "❌ lookup or connection failed"; exit 1; }
 
           if [ "${{ github.run_number }}" = "1" ]; then
-            echo "🧪 Dry-run SQL"
-            eval "$LB_CMD updateSql" > dry-run-output.sql
+            echo "🧪 Performing dry-run"
+            eval "$LB updateSql" > dry-run-output.sql
             echo "🔁 Syncing changelog"
-            eval "$LB_CMD changelogSync"
+            eval "$LB changelogSync"
           else
-            echo "🚀 Applying changes"
-            eval "$LB_CMD update"
+            echo "🚀 Applying migrations"
+            eval "$LB update"
           fi
