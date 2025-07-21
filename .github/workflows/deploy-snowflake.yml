@@ -1,54 +1,67 @@
 name: Deploy to Snowflake
+
 on:
   push:
-    branches: [ main ]
-permissions:
-  contents: write
+    branches:
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    env:
+      SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
+      SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
+      SF_USER: ${{ secrets.SF_USER }}
+      SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
+
     steps:
-    - uses: actions/checkout@v4
-      with:
-        persist-credentials: true
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - uses: actions/setup-java@v4
-      with:
-        distribution: temurin
-        java-version: '17'
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-    - run: |
-        curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
-        unzip -q liquibase.zip -d liquibase-cli
-        chmod +x liquibase-cli/liquibase
+      - name: Download Liquibase CLI
+        run: |
+          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz -o liquibase.tar.gz
+          mkdir -p liquibase-cli
+          tar -xzf liquibase.tar.gz -C liquibase-cli --strip-components=1
+          rm liquibase.tar.gz
 
-    - name: Deploy with per-table dry-run
-      env:
-        SF_ACCOUNT:   ${{ secrets.SF_ACCOUNT }}
-        SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
-        SF_USER:      ${{ secrets.SF_USER }}
-        SF_PASSWORD:  ${{ secrets.SF_PASSWORD }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        echo "🔧 Starting deployment"
-        URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?warehouse=${SF_WAREHOUSE}"
+      - name: Run Liquibase Dry Run + changelogSync (First Run)
+        run: |
+          echo "🔧 Starting deployment"
+          URL_BASE="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com"
 
-        for tblFolder in ddl/demo_db/demo_schema/table ddl/sales_db/customer_schema/table; do
-          mkdir -p "$tblFolder/.first_run_done"
+          found_first_run=0
 
-          for sql in "$tblFolder"/*.sql; do
-            marker="$tblFolder/.first_run_done/$(basename "$sql").done"
+          for sql in ddl/*/*/table/*.sql; do
+            database=$(echo "$sql" | cut -d'/' -f2)
+            schema=$(echo "$sql" | cut -d'/' -f3)
+            base_sql=$(basename "$sql")
+            marker="ddl/$database/$schema/table/.first_run_done/${base_sql}.done"
+
+            mkdir -p "ddl/$database/$schema/table/.first_run_done"
+
             if [ ! -f "$marker" ]; then
-              echo "🧪 First run: dry-run for $sql"
+              echo "🧪 Dry-run: $sql | DB: $database | Schema: $schema"
+
               liquibase-cli/liquibase \
-                --url="$URL" --username="$SF_USER" --password="$SF_PASSWORD" \
+                --url="${URL_BASE}/?warehouse=${SF_WAREHOUSE}&db=${database}&schema=${schema}" \
+                --username="$SF_USER" \
+                --password="$SF_PASSWORD" \
                 --changelog-file=liquibase/changelog/liquibase-master.xml \
                 --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-                updateSql > dryrun-$(basename "$sql").sql
+                updateSql > dryrun-${base_sql}.sql
 
               liquibase-cli/liquibase \
-                --url="$URL" --username="$SF_USER" --password="$SF_PASSWORD" \
+                --url="${URL_BASE}/?warehouse=${SF_WAREHOUSE}&db=${database}&schema=${schema}" \
+                --username="$SF_USER" \
+                --password="$SF_PASSWORD" \
                 --changelog-file=liquibase/changelog/liquibase-master.xml \
                 --driver=net.snowflake.client.jdbc.SnowflakeDriver \
                 changelogSync
@@ -57,24 +70,38 @@ jobs:
               git config user.name "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
               git add "$marker"
-              git commit -m "✅ Dry‑run done for $(basename "$sql")"
+              git commit -m "✅ Dry‑run done for $base_sql"
               git push origin main
 
-              echo "✅ Dry‑run complete for $(basename "$sql") — exiting"
-              exit 0
+              echo "✅ Dry‑run complete for $base_sql"
+              found_first_run=1
+            else
+              echo "⚠️ Already processed: $sql"
             fi
           done
-        done
 
-        echo "🧹 All dry-runs done ✔︎ Running real deployment now"
-        liquibase-cli/liquibase \
-          --url="$URL" --username="$SF_USER" --password="$SF_PASSWORD" \
-          --changelog-file=liquibase/changelog/liquibase-master.xml \
-          --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-          clearCheckSums
+          if [ "$found_first_run" -eq 1 ]; then
+            echo "✅ One or more dry-runs executed. Skipping full update."
+            exit 0
+          fi
 
-        liquibase-cli/liquibase \
-          --url="$URL" --username="$SF_USER" --password="$SF_PASSWORD" \
-          --changelog-file=liquibase/changelog/liquibase-master.xml \
-          --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-          update
+      - name: Run Full Deployment (Liquibase update)
+        run: |
+          echo "🧹 All dry-runs done ✔︎ Running real deployment now"
+          URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?warehouse=${SF_WAREHOUSE}"
+
+          liquibase-cli/liquibase \
+            --url="$URL" \
+            --username="$SF_USER" \
+            --password="$SF_PASSWORD" \
+            --changelog-file=liquibase/changelog/liquibase-master.xml \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+            clearCheckSums
+
+          liquibase-cli/liquibase \
+            --url="$URL" \
+            --username="$SF_USER" \
+            --password="$SF_PASSWORD" \
+            --changelog-file=liquibase/changelog/liquibase-master.xml \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+            update
