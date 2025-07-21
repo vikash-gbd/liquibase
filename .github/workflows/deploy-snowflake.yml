@@ -6,7 +6,7 @@ on:
       - main
 
 permissions:
-  contents: write   # allow committing marker files
+  contents: write
 
 jobs:
   deploy:
@@ -36,39 +36,43 @@ jobs:
 
       - name: Download Liquibase CLI
         run: |
-          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz \
+          # 1) Download the tarball
+          curl -sL \
+            https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz \
             -o liquibase.tar.gz
 
+          # 2) Prepare install dir
           mkdir -p liquibase-cli
+
+          # 3) Extract into liquibase-cli, strip top-level folder
           tar -xzf liquibase.tar.gz -C liquibase-cli --strip-components=1
 
+          # 4) Make the binary executable
           chmod +x liquibase-cli/liquibase
 
       - name: Deploy to Snowflake
         run: |
           echo "🔧 Starting deployment"
 
-          # Add liquibase-cli to PATH so we can call `liquibase` directly
+          # Add liquibase-cli to PATH
           export PATH="$PWD/liquibase-cli:$PATH"
 
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
 
-          # Prepare per‑file marker directory
           mkdir -p .first_run_done 2>/dev/null || true
 
-          # Loop through each SQL file
-          while IFS= read -r sql_file; do
-            marker_file=".first_run_done/${sql_file}.done"
-            if [ ! -f "$marker_file" ]; then
-              echo "🧪 First run for $sql_file – dry run & changelogSync"
-
+          # Dry‑run & sync each new SQL file
+          while IFS= read -r sql; do
+            marker=".first_run_done/${sql}.done"
+            if [ ! -f "$marker" ]; then
+              echo "🧪 Dry-run & sync for $sql"
               liquibase \
                 --url="$URL" \
                 --username="$SF_USER" \
                 --password="$SF_PASSWORD" \
                 --changelog-file=liquibase/changelog/liquibase-master.xml \
                 --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-                updateSql > dry-run-${sql_file//\//_}.sql
+                updateSql > dry-run-${sql//\//_}.sql
 
               liquibase \
                 --url="$URL" \
@@ -78,20 +82,19 @@ jobs:
                 --driver=net.snowflake.client.jdbc.SnowflakeDriver \
                 changelogSync
 
-              # Commit marker for this file
-              touch "$marker_file"
+              touch "$marker"
               git config user.name "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
-              git add "$marker_file"
-              git commit -m "chore: mark $sql_file as dry‐run completed"
+              git add "$marker"
+              git commit -m "chore: mark $sql as dry-run completed"
               git push origin main
 
-              echo "✅ Dry run + changelogSync done for $sql_file. Exiting."
+              echo "✅ Done. Exiting so you can review dry-run."
               exit 0
             fi
           done < <(find ddl -name "*.sql" | sort)
 
-          # If all files have been dry‐run, apply real updates
+          # All files have been dry‑run once, now apply real updates
           echo "🧹 Clearing checksums"
           liquibase \
             --url="$URL" \
@@ -101,7 +104,7 @@ jobs:
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             clearCheckSums
 
-          echo "🚀 Applying real update"
+          echo "🚀 Executing real update"
           liquibase \
             --url="$URL" \
             --username="$SF_USER" \
