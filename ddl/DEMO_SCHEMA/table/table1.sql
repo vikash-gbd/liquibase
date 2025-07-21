@@ -3,8 +3,9 @@
 --changeset ravi:table1-create
 CREATE TABLE DEMO_SCHEMA.table1 (
     id INT PRIMARY KEY,
-    name STRING
+    name STRING,
+    employee   String
 );
 
 --changeset ravi:table1-insert
-INSERT INTO DEMO_SCHEMA.table1 (id, name) VALUES (1, 'Sample Data');
+INSERT INTO DEMO_SCHEMA.table1 (id, name) VALUES (1, 'Sample Data','vikash');
