@@ -1,4 +1,4 @@
-name: Deploy to Snowflake (Per Table Flag)
+name: Deploy to Snowflake (Per Table Dry Run + Sync)
 
 on:
   push:
@@ -17,22 +17,28 @@ jobs:
       SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
 
     steps:
-      - name: Checkout repository
+      - name: ⬇️ Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set up Java
+      - name: ☕ Set up Java 17
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: 17
 
-      - name: Download and Set Up Liquibase CLI
+      - name: 📥 Download and Set Up Liquibase CLI
         run: |
           curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
-      - name: Run Liquibase per-table with flag file
+      - name: ➕ Add Liquibase to PATH
+        run: echo "${{ github.workspace }}/liquibase-cli" >> $GITHUB_PATH
+
+      - name: 🧪 Verify Liquibase Installation
+        run: liquibase --version
+
+      - name: 🧩 Run Liquibase Per-SQL Dry Run and Sync (with .done flag)
         run: |
           mkdir -p liquibase/tmp
           find ddl -type f -name "*.sql" | while read sql_file; do
@@ -52,18 +58,11 @@ jobs:
               echo "  </changeSet>" >> $changelog_path
               echo "</databaseChangeLog>" >> $changelog_path
 
-              liquibase \
-                --changeLogFile=$changelog_path \
-                --defaultsFile=liquibase.properties \
-                updateSql
-
-              liquibase \
-                --changeLogFile=$changelog_path \
-                --defaultsFile=liquibase.properties \
-                changelogSync
+              liquibase --changeLogFile=$changelog_path --defaultsFile=liquibase.properties updateSql
+              liquibase --changeLogFile=$changelog_path --defaultsFile=liquibase.properties changelogSync
 
               touch "$done_flag"
-              echo "✔️  Done: $sql_file"
+              echo "✅ Done: $sql_file"
             else
               echo "⏭️  Skipping (already done): $sql_file"
             fi
