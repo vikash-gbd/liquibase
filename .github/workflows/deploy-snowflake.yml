@@ -6,7 +6,7 @@ on:
       - main
 
 permissions:
-  contents: write   # so we can commit marker files
+  contents: write   # allow committing marker files
 
 jobs:
   deploy:
@@ -36,16 +36,19 @@ jobs:
 
       - name: Download Liquibase CLI
         run: |
-          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz -o liquibase.tar.gz
+          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz \
+            -o liquibase.tar.gz
+
           mkdir -p liquibase-cli
           tar -xzf liquibase.tar.gz -C liquibase-cli --strip-components=1
+
           chmod +x liquibase-cli/liquibase
 
       - name: Deploy to Snowflake
         run: |
           echo "🔧 Starting deployment"
 
-          # Add liquibase-cli to PATH so we can just call `liquibase`
+          # Add liquibase-cli to PATH so we can call `liquibase` directly
           export PATH="$PWD/liquibase-cli:$PATH"
 
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
@@ -53,7 +56,7 @@ jobs:
           # Prepare per‑file marker directory
           mkdir -p .first_run_done 2>/dev/null || true
 
-          # Scan all .sql files under ddl/
+          # Loop through each SQL file
           while IFS= read -r sql_file; do
             marker_file=".first_run_done/${sql_file}.done"
             if [ ! -f "$marker_file" ]; then
@@ -80,15 +83,15 @@ jobs:
               git config user.name "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
               git add "$marker_file"
-              git commit -m "chore: mark $sql_file as dry‑run completed"
+              git commit -m "chore: mark $sql_file as dry‐run completed"
               git push origin main
 
-              echo "✅ Dry run + sync done for $sql_file. Exiting."
+              echo "✅ Dry run + changelogSync done for $sql_file. Exiting."
               exit 0
             fi
           done < <(find ddl -name "*.sql" | sort)
 
-          # If we reach here, all .sql files have been dry‑run at least once
+          # If all files have been dry‐run, apply real updates
           echo "🧹 Clearing checksums"
           liquibase \
             --url="$URL" \
