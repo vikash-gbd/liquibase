@@ -66,8 +66,10 @@ jobs:
                 changelogSync
 
               touch "$marker"
+
               git config user.name "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
+              git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/vikash-gbd/liquibase.git
               git add "$marker"
               git commit -m "✅ Dry-run done for $file"
               git push origin main
@@ -81,7 +83,6 @@ jobs:
 
           echo "🧹 All dry-runs done ✔︎ Running real deployment now"
 
-          # Run real update across all configured databases/schemas
           for db in demo_db sales_db; do
             for schema in demo_schema customer_schema; do
               URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?warehouse=${SF_WAREHOUSE}&db=${db}&schema=${schema}&role=${SF_ROLE}"
