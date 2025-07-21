@@ -53,7 +53,7 @@ jobs:
               echo "📄 First time processing $sql_file"
               process="yes"
             else
-              stored_hash=$(cat "$done_file" | grep HASH= | cut -d'=' -f2)
+              stored_hash=$(grep HASH= "$done_file" | cut -d'=' -f2)
               if [ "$stored_hash" != "$current_hash" ]; then
                 echo "✏️  SQL file changed: $sql_file"
                 process="yes"
@@ -83,7 +83,7 @@ EOF
                 --url="$URL" \
                 --username="$SF_USER" \
                 --password="$SF_PASSWORD" \
-                --changeLogFile=$changelog_path \
+                --changeLogFile="$changelog_path" \
                 --driver=net.snowflake.client.jdbc.SnowflakeDriver \
                 updateSql
 
@@ -92,7 +92,7 @@ EOF
                 --url="$URL" \
                 --username="$SF_USER" \
                 --password="$SF_PASSWORD" \
-                --changeLogFile=$changelog_path \
+                --changeLogFile="$changelog_path" \
                 --driver=net.snowflake.client.jdbc.SnowflakeDriver \
                 changelogSync
 
