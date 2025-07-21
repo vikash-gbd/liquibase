@@ -17,7 +17,7 @@ jobs:
       SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Set up Java
@@ -26,12 +26,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Download Liquibase CLI
+      - name: Download and Set Up Liquibase CLI
         run: |
           curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz -o liquibase.tar.gz
           mkdir -p liquibase-cli
           tar -xzf liquibase.tar.gz -C liquibase-cli --strip-components=1
-          echo "$GITHUB_WORKSPACE/liquibase-cli" >> $GITHUB_PATH
+          chmod +x liquibase-cli/liquibase
+          echo "$(pwd)/liquibase-cli" >> $GITHUB_PATH
 
       - name: Run Liquibase per-table with flag file
         run: |
@@ -39,9 +40,8 @@ jobs:
           find ddl -type f -name "*.sql" | while read sql_file; do
             done_flag="${sql_file}.done"
             if [ ! -f "$done_flag" ]; then
-              echo "Processing $sql_file"
+              echo "📄 Processing $sql_file"
 
-              # Create temporary changelog XML
               changelog_path="liquibase/tmp/single-temp.xml"
               echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" > $changelog_path
               echo "<databaseChangeLog" >> $changelog_path
@@ -54,19 +54,16 @@ jobs:
               echo "  </changeSet>" >> $changelog_path
               echo "</databaseChangeLog>" >> $changelog_path
 
-              # Dry run SQL
               liquibase \
                 --changeLogFile=$changelog_path \
                 --defaultsFile=liquibase.properties \
                 updateSql
 
-              # Mark as executed
               liquibase \
                 --changeLogFile=$changelog_path \
                 --defaultsFile=liquibase.properties \
                 changelogSync
 
-              # Create flag file
               touch "$done_flag"
               echo "✔️  Done: $sql_file"
             else
