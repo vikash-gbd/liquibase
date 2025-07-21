@@ -38,17 +38,15 @@ jobs:
           SF_USER:       ${{ secrets.SF_USER }}
           SF_PASSWORD:   ${{ secrets.SF_PASSWORD }}
         run: |
-          # Fail fast if any required secret is missing
           if [ -z "$SF_ACCOUNT" ]; then
             echo "❌ ERROR: SF_ACCOUNT secret is not set"
             exit 1
           fi
 
-          # Build JDBC URL
+          # Build JDBC URL and escape password
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
           ESC_PW=$(printf '%q' "$SF_PASSWORD")
 
-          # Base Liquibase command
           BASE_CMD="liquibase-cli/liquibase \
             --search-path='.' \
             --changelog-file=liquibase/changelog/liquibase-master.xml \
@@ -57,9 +55,6 @@ jobs:
             --password='$ESC_PW' \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver"
 
-          echo "🔧 Validating changelogs & connection"
-          eval "$BASE_CMD status" || { echo "❌ Cannot parse changelogs or connect to Snowflake"; exit 1; }
-
           if [ "${{ github.run_number }}" = "1" ]; then
             echo "🧪 First Run: Performing dry-run only"
             eval "$BASE_CMD updateSql" > dry-run-output.sql
@@ -67,8 +62,11 @@ jobs:
             echo "🔁 Syncing changelog checksums"
             eval "$BASE_CMD changelogSync"
           else
-            echo "🧹 Clearing old checksums (if any changed)"
+            echo "🧹 Clearing old checksums (if file contents changed)"
             eval "$BASE_CMD clearCheckSums"
+
+            echo "🔧 Validating changelogs & connection"
+            eval "$BASE_CMD status" || { echo "❌ Cannot parse changelogs or connect to Snowflake"; exit 1; }
 
             echo "🚀 Applying actual database updates"
             eval "$BASE_CMD update"
