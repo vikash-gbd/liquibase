@@ -5,15 +5,13 @@
         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
     <includeAll 
-        path="../../ddl/demo_db/demo_schema/function" 
+        path="../../ddl/demo_db/demo_schema/function"
         relativeToChangelogFile="true"
-        errorIfMissingOrEmpty="false"
-        runOnChange="true" />
+        errorIfMissingOrEmpty="false" />
 
     <includeAll 
-        path="../../ddl/sales_db/customer_schema/function" 
+        path="../../ddl/sales_db/customer_schema/function"
         relativeToChangelogFile="true"
-        errorIfMissingOrEmpty="false"
-        runOnChange="true" />
+        errorIfMissingOrEmpty="false" />
 
 </databaseChangeLog>
