@@ -1,11 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<databaseChangeLog 
-    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="
-        http://www.liquibase.org/xml/ns/dbchangelog 
-        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+<databaseChangeLog
+   xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+   xsi:schemaLocation="
+     http://www.liquibase.org/xml/ns/dbchangelog
+     http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
-    <include file="liquibase-tables.xml" relativeToChangelogFile="true"/>
-    <include file="liquibase-functions.xml" relativeToChangelogFile="true"/>
+  <!-- Automatically pick up every .sql under ddl/DEMO_SCHEMA/table -->
+  <includeAll 
+    path="ddl/DEMO_SCHEMA/table" 
+    relativeToChangelogFile="false" 
+    errorIfMissingOrEmpty="false"/>
+
+  <!-- Automatically pick up every .sql under ddl/DEMO_SCHEMA/function -->
+  <includeAll 
+    path="ddl/DEMO_SCHEMA/function" 
+    relativeToChangelogFile="false" 
+    errorIfMissingOrEmpty="false"/>
+
 </databaseChangeLog>
