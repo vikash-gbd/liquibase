@@ -38,7 +38,8 @@ jobs:
 
           cd liquibase
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
-          
+
+          # Precheck
           ./../liquibase-cli/liquibase \
             --url="$URL" \
             --username="$SF_USER" \
@@ -47,7 +48,15 @@ jobs:
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             status --verbose || exit 1
 
-          if [ "${{ github.run_number }}" = "1" ]; then
+          # First-time run detection
+          if ./../liquibase-cli/liquibase \
+              --url="$URL" \
+              --username="$SF_USER" \
+              --password="$SF_PASSWORD" \
+              --changelog-file=changelog/liquibase-master.xml \
+              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+              history | grep -q "No changesets"; then
+
             echo "🧪 First run: dry-run + changelogSync"
             ./../liquibase-cli/liquibase \
               --url="$URL" \
@@ -65,6 +74,7 @@ jobs:
               --changelog-file=changelog/liquibase-master.xml \
               --driver=net.snowflake.client.jdbc.SnowflakeDriver \
               changelogSync
+
           else
             echo "🧹 Clearing checksum if file content changed"
             ./../liquibase-cli/liquibase \
