@@ -7,10 +7,14 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to commit back the marker file
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true  # so GITHUB_TOKEN is in scope
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -26,20 +30,21 @@ jobs:
 
       - name: Deploy to Snowflake
         env:
-          SF_ACCOUNT:    ${{ secrets.SF_ACCOUNT }}
-          SF_DATABASE:   ${{ secrets.SF_DATABASE }}
-          SF_SCHEMA:     ${{ secrets.SF_SCHEMA }}
-          SF_WAREHOUSE:  ${{ secrets.SF_WAREHOUSE }}
-          SF_ROLE:       ${{ secrets.SF_ROLE }}
-          SF_USER:       ${{ secrets.SF_USER }}
-          SF_PASSWORD:   ${{ secrets.SF_PASSWORD }}
+          SF_ACCOUNT:  ${{ secrets.SF_ACCOUNT }}
+          SF_DATABASE: ${{ secrets.SF_DATABASE }}
+          SF_SCHEMA:   ${{ secrets.SF_SCHEMA }}
+          SF_WAREHOUSE:${{ secrets.SF_WAREHOUSE }}
+          SF_ROLE:     ${{ secrets.SF_ROLE }}
+          SF_USER:     ${{ secrets.SF_USER }}
+          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🔧 Starting deployment process"
           cd liquibase
 
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
 
-          # Precheck connectivity and changelog parsing
+          # 1) Common precheck
           ./../liquibase-cli/liquibase \
             --url="$URL" \
             --username="$SF_USER" \
@@ -48,25 +53,20 @@ jobs:
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             status --verbose || exit 1
 
-          # FIRST-RUN detection: history --limit=1 returns empty
-          if ! ./../liquibase-cli/liquibase \
-              --url="$URL" \
-              --username="$SF_USER" \
-              --password="$SF_PASSWORD" \
-              --changelog-file=changelog/liquibase-master.xml \
-              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              history --limit=1 | grep -q .; then
+          # 2) First-run marker logic
+          if [ ! -f ../.first_run_done ]; then
+            echo "🧪 FIRST RUN: dry-run + changelogSync"
 
-            echo "🧪 First run detected: dry-run + changelogSync"
+            # Dry-run SQL only
             ./../liquibase-cli/liquibase \
               --url="$URL" \
               --username="$SF_USER" \
               --password="$SF_PASSWORD" \
               --changelog-file=changelog/liquibase-master.xml \
               --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              updateSql > dry-run-output.sql
+              updateSql > ../dry-run-output.sql
 
-            echo "🔁 Syncing changelog without execution"
+            # Mark all as executed in DATABASECHANGELOG
             ./../liquibase-cli/liquibase \
               --url="$URL" \
               --username="$SF_USER" \
@@ -75,22 +75,34 @@ jobs:
               --driver=net.snowflake.client.jdbc.SnowflakeDriver \
               changelogSync
 
-          else
-            echo "🧹 Clearing checksums for changed files"
-            ./../liquibase-cli/liquibase \
-              --url="$URL" \
-              --username="$SF_USER" \
-              --password="$SF_PASSWORD" \
-              --changelog-file=changelog/liquibase-master.xml \
-              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              clearCheckSums
+            # Create & commit marker file so next runs go live
+            cd .. 
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            touch .first_run_done
+            git add .first_run_done
+            git commit -m "chore: mark first run as completed"
+            git push
 
-            echo "🚀 Executing real changes"
-            ./../liquibase-cli/liquibase \
-              --url="$URL" \
-              --username="$SF_USER" \
-              --password="$SF_PASSWORD" \
-              --changelog-file=changelog/liquibase-master.xml \
-              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              update
+            echo "✅ First‑run setup complete; stopping here."
+            exit 0
           fi
+
+          # 3) All subsequent runs: clear checksums + real update
+          echo "🧹 Clearing checksums for changed files"
+          ./../liquibase-cli/liquibase \
+            --url="$URL" \
+            --username="$SF_USER" \
+            --password="$SF_PASSWORD" \
+            --changelog-file=changelog/liquibase-master.xml \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+            clearCheckSums
+
+          echo "🚀 Applying real changes"
+          ./../liquibase-cli/liquibase \
+            --url="$URL" \
+            --username="$SF_USER" \
+            --password="$SF_PASSWORD" \
+            --changelog-file=changelog/liquibase-master.xml \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+            update
