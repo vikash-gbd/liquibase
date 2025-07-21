@@ -4,5 +4,16 @@
     xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
-    <includeAll path="../../ddl/DEMO_SCHEMA/function" relativeToChangelogFile="true" />
+    <includeAll 
+        path="../../ddl/demo_db/demo_schema/function" 
+        relativeToChangelogFile="true"
+        errorIfMissingOrEmpty="false"
+        runOnChange="true" />
+
+    <includeAll 
+        path="../../ddl/sales_db/customer_schema/function" 
+        relativeToChangelogFile="true"
+        errorIfMissingOrEmpty="false"
+        runOnChange="true" />
+
 </databaseChangeLog>

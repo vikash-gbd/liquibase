@@ -1,12 +1,19 @@
-<databaseChangeLog 
+<databaseChangeLog
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="
-        http://www.liquibase.org/xml/ns/dbchangelog 
-        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
     <includeAll 
-        path="../../ddl/database1/schema1/table" 
-        relativeToChangelogFile="true" 
-        errorIfMissingOrEmpty="false" />
+        path="../../ddl/demo_db/demo_schema/table" 
+        relativeToChangelogFile="true"
+        errorIfMissingOrEmpty="false"
+        runOnChange="true" />
+
+    <includeAll 
+        path="../../ddl/sales_db/customer_schema/table" 
+        relativeToChangelogFile="true"
+        errorIfMissingOrEmpty="false"
+        runOnChange="true" />
+
 </databaseChangeLog>
