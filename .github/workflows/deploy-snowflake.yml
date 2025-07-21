@@ -1,94 +1,75 @@
-name: Deploy to Snowflake
+name: Deploy to Snowflake (Per Table Flag)
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      LIQUIBASE_PROPS_FILE: ./liquibase.properties
+      SNOWFLAKE_USERNAME: ${{ secrets.SNOWFLAKE_USERNAME }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+      - name: Set up Java
+        uses: actions/setup-java@v3
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
 
       - name: Download Liquibase CLI
         run: |
-          curl -sL \
-            https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz \
-            -o liquibase.tar.gz
+          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz -o liquibase.tar.gz
           mkdir -p liquibase-cli
           tar -xzf liquibase.tar.gz -C liquibase-cli --strip-components=1
-          chmod +x liquibase-cli/liquibase
+          echo "$GITHUB_WORKSPACE/liquibase-cli" >> $GITHUB_PATH
 
-      - name: Deploy to Snowflake
-        env:
-          SF_ACCOUNT:   ${{ secrets.SF_ACCOUNT }}
-          SF_DATABASE:  ${{ secrets.SF_DATABASE }}
-          SF_SCHEMA:    ${{ secrets.SF_SCHEMA }}
-          SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
-          SF_ROLE:      ${{ secrets.SF_ROLE }}
-          SF_USER:      ${{ secrets.SF_USER }}
-          SF_PASSWORD:  ${{ secrets.SF_PASSWORD }}
+      - name: Run Liquibase per-table with flag file
         run: |
-          echo "🔧 Starting deployment process"
+          mkdir -p liquibase/tmp
+          find ddl -type f -name "*.sql" | while read sql_file; do
+            done_flag="${sql_file}.done"
+            if [ ! -f "$done_flag" ]; then
+              echo "Processing $sql_file"
 
-          URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
+              # Create temporary changelog XML
+              changelog_path="liquibase/tmp/single-temp.xml"
+              echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" > $changelog_path
+              echo "<databaseChangeLog" >> $changelog_path
+              echo "  xmlns=\"http://www.liquibase.org/xml/ns/dbchangelog\"" >> $changelog_path
+              echo "  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"" >> $changelog_path
+              echo "  xsi:schemaLocation=\"http://www.liquibase.org/xml/ns/dbchangelog" >> $changelog_path
+              echo "  http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd\">" >> $changelog_path
+              echo "  <changeSet id=\"$(date +%s)-$RANDOM\" author=\"auto\">" >> $changelog_path
+              echo "    <sqlFile path=\"$sql_file\" relativeToChangelogFile=\"false\" splitStatements=\"true\" stripComments=\"true\"/>" >> $changelog_path
+              echo "  </changeSet>" >> $changelog_path
+              echo "</databaseChangeLog>" >> $changelog_path
 
-          # 1) Validate connectivity and changelogs
-          liquibase-cli/liquibase \
-            --url="$URL" \
-            --username="$SF_USER" \
-            --password="$SF_PASSWORD" \
-            --changelog-file=liquibase/changelog/liquibase-master.xml \
-            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-            status --verbose || exit 1
+              # Dry run SQL
+              liquibase \
+                --changeLogFile=$changelog_path \
+                --defaultsFile=liquibase.properties \
+                updateSql
 
-          # 2) First run logic: dry-run + changelogSync + marker file
-          if [ ! -f .first_run_done ]; then
-            echo "🧪 FIRST RUN: performing dry‐run and changelogSync"
-            liquibase-cli/liquibase \
-              --url="$URL" \
-              --username="$SF_USER" \
-              --password="$SF_PASSWORD" \
-              --changelog-file=liquibase/changelog/liquibase-master.xml \
-              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              updateSql > dry-run-output.sql
+              # Mark as executed
+              liquibase \
+                --changeLogFile=$changelog_path \
+                --defaultsFile=liquibase.properties \
+                changelogSync
 
-            liquibase-cli/liquibase \
-              --url="$URL" \
-              --username="$SF_USER" \
-              --password="$SF_PASSWORD" \
-              --changelog-file=liquibase/changelog/liquibase-master.xml \
-              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              changelogSync
-
-            touch .first_run_done
-
-            exit 0
-          fi
-
-          # 3) Subsequent runs: clear checksums + apply changes
-          echo "🧹 Clearing checksums"
-          liquibase-cli/liquibase \
-            --url="$URL" \
-            --username="$SF_USER" \
-            --password="$SF_PASSWORD" \
-            --changelog-file=liquibase/changelog/liquibase-master.xml \
-            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-            clearCheckSums
-
-          echo "🚀 Applying real changes"
-          liquibase-cli/liquibase \
-            --url="$URL" \
-            --username="$SF_USER" \
-            --password="$SF_PASSWORD" \
-            --changelog-file=liquibase/changelog/liquibase-master.xml \
-            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-            update
+              # Create flag file
+              touch "$done_flag"
+              echo "✔️  Done: $sql_file"
+            else
+              echo "⏭️  Skipping (already done): $sql_file"
+            fi
+          done
