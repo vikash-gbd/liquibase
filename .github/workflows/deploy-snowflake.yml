@@ -4,17 +4,18 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: write   # allow committing the marker file
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write   # needed to commit back the marker file
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          persist-credentials: true  # so GITHUB_TOKEN is in scope
+          persist-credentials: true  # so GITHUB_TOKEN can be used
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -30,79 +31,75 @@ jobs:
 
       - name: Deploy to Snowflake
         env:
-          SF_ACCOUNT:     ${{ secrets.SF_ACCOUNT }}
-          SF_DATABASE:    ${{ secrets.SF_DATABASE }}
-          SF_SCHEMA:      ${{ secrets.SF_SCHEMA }}
-          SF_WAREHOUSE:   ${{ secrets.SF_WAREHOUSE }}
-          SF_ROLE:        ${{ secrets.SF_ROLE }}
-          SF_USER:        ${{ secrets.SF_USER }}
-          SF_PASSWORD:    ${{ secrets.SF_PASSWORD }}
-          GITHUB_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
+          SF_ACCOUNT:   ${{ secrets.SF_ACCOUNT }}
+          SF_DATABASE:  ${{ secrets.SF_DATABASE }}
+          SF_SCHEMA:    ${{ secrets.SF_SCHEMA }}
+          SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
+          SF_ROLE:      ${{ secrets.SF_ROLE }}
+          SF_USER:      ${{ secrets.SF_USER }}
+          SF_PASSWORD:  ${{ secrets.SF_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🔧 Starting deployment process"
-          cd liquibase
 
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
 
-          # Precheck connectivity and changelog parsing
-          ./../liquibase-cli/liquibase \
+          # 1) Precheck connectivity & changelog parsing
+          liquibase-cli/liquibase \
             --url="$URL" \
             --username="$SF_USER" \
             --password="$SF_PASSWORD" \
-            --changelog-file=changelog/liquibase-master.xml \
+            --changelog-file=liquibase/changelog/liquibase-master.xml \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             status --verbose || exit 1
 
-          # First-run marker logic
-          if [ ! -f ../.first_run_done ]; then
-            echo "🧪 FIRST RUN: dry-run + changelogSync"
+          # 2) First run? dry-run + changelogSync + create marker
+          if [ ! -f .first_run_done ]; then
+            echo "🧪 FIRST RUN: performing dry‐run and changelogSync"
 
-            # Dry-run SQL only
-            ./../liquibase-cli/liquibase \
+            liquibase-cli/liquibase \
               --url="$URL" \
               --username="$SF_USER" \
               --password="$SF_PASSWORD" \
-              --changelog-file=changelog/liquibase-master.xml \
+              --changelog-file=liquibase/changelog/liquibase-master.xml \
               --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              updateSql > ../dry-run-output.sql
+              updateSql > dry-run-output.sql
 
-            # Mark all as executed in DATABASECHANGELOG
-            ./../liquibase-cli/liquibase \
+            liquibase-cli/liquibase \
               --url="$URL" \
               --username="$SF_USER" \
               --password="$SF_PASSWORD" \
-              --changelog-file=changelog/liquibase-master.xml \
+              --changelog-file=liquibase/changelog/liquibase-master.xml \
               --driver=net.snowflake.client.jdbc.SnowflakeDriver \
               changelogSync
 
-            # Create & commit marker file so next runs go live
-            cd .. 
+            # commit marker file for future runs
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             touch .first_run_done
             git add .first_run_done
             git commit -m "chore: mark first run as completed"
-            git push
+            git push origin main
 
-            echo "✅ First‑run setup complete; stopping here."
+            echo "✅ Dry‐run complete; marker file created. Exiting."
             exit 0
           fi
 
-          # All subsequent runs: clear checksums + real update
+          # 3) Subsequent runs: clear checksums + real update
           echo "🧹 Clearing checksums for changed files"
-          ./../liquibase-cli/liquibase \
+          liquibase-cli/liquibase \
             --url="$URL" \
             --username="$SF_USER" \
             --password="$SF_PASSWORD" \
-            --changelog-file=changelog/liquibase-master.xml \
+            --changelog-file=liquibase/changelog/liquibase-master.xml \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             clearCheckSums
 
           echo "🚀 Applying real changes"
-          ./../liquibase-cli/liquibase \
+          liquibase-cli/liquibase \
             --url="$URL" \
             --username="$SF_USER" \
             --password="$SF_PASSWORD" \
-            --changelog-file=changelog/liquibase-master.xml \
+            --changelog-file=liquibase/changelog/liquibase-master.xml \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             update
