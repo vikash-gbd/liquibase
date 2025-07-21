@@ -35,11 +35,11 @@ jobs:
           SF_PASSWORD:   ${{ secrets.SF_PASSWORD }}
         run: |
           echo "🔧 Starting deployment process"
-
           cd liquibase
+
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
 
-          # Precheck
+          # Precheck connectivity and changelog parsing
           ./../liquibase-cli/liquibase \
             --url="$URL" \
             --username="$SF_USER" \
@@ -48,16 +48,16 @@ jobs:
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             status --verbose || exit 1
 
-          # First-time run detection
-          if ./../liquibase-cli/liquibase \
+          # Detect if any changesets have run yet (history --count 1)
+          if ! ./../liquibase-cli/liquibase \
               --url="$URL" \
               --username="$SF_USER" \
               --password="$SF_PASSWORD" \
               --changelog-file=changelog/liquibase-master.xml \
               --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              history | grep -q "No changesets"; then
+              history --count 1 | grep -q .; then
 
-            echo "🧪 First run: dry-run + changelogSync"
+            echo "🧪 First run detected: performing dry-run + changelogSync"
             ./../liquibase-cli/liquibase \
               --url="$URL" \
               --username="$SF_USER" \
@@ -76,7 +76,7 @@ jobs:
               changelogSync
 
           else
-            echo "🧹 Clearing checksum if file content changed"
+            echo "🧹 Clearing checksums for changed files"
             ./../liquibase-cli/liquibase \
               --url="$URL" \
               --username="$SF_USER" \
@@ -85,7 +85,7 @@ jobs:
               --driver=net.snowflake.client.jdbc.SnowflakeDriver \
               clearCheckSums
 
-            echo "🚀 Executing changesets"
+            echo "🚀 Executing real changes"
             ./../liquibase-cli/liquibase \
               --url="$URL" \
               --username="$SF_USER" \
