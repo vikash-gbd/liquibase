@@ -10,4 +10,4 @@ CREATE TABLE DEMO_SCHEMA.table1 (
 
 --changeset ravi:table1-insert runOnChange:true
 INSERT INTO DEMO_SCHEMA.table1 (id, name, employee, created_at)
-VALUES (2, 'Second Row', 'Ravi', CURRENT_TIMESTAMP);
+VALUES (3, 'Third Row', 'Ravi Singh', CURRENT_TIMESTAMP);
