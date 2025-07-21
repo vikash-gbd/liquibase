@@ -30,21 +30,21 @@ jobs:
 
       - name: Deploy to Snowflake
         env:
-          SF_ACCOUNT:  ${{ secrets.SF_ACCOUNT }}
-          SF_DATABASE: ${{ secrets.SF_DATABASE }}
-          SF_SCHEMA:   ${{ secrets.SF_SCHEMA }}
-          SF_WAREHOUSE:${{ secrets.SF_WAREHOUSE }}
-          SF_ROLE:     ${{ secrets.SF_ROLE }}
-          SF_USER:     ${{ secrets.SF_USER }}
-          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SF_ACCOUNT:     ${{ secrets.SF_ACCOUNT }}
+          SF_DATABASE:    ${{ secrets.SF_DATABASE }}
+          SF_SCHEMA:      ${{ secrets.SF_SCHEMA }}
+          SF_WAREHOUSE:   ${{ secrets.SF_WAREHOUSE }}
+          SF_ROLE:        ${{ secrets.SF_ROLE }}
+          SF_USER:        ${{ secrets.SF_USER }}
+          SF_PASSWORD:    ${{ secrets.SF_PASSWORD }}
+          GITHUB_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🔧 Starting deployment process"
           cd liquibase
 
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
 
-          # 1) Common precheck
+          # Precheck connectivity and changelog parsing
           ./../liquibase-cli/liquibase \
             --url="$URL" \
             --username="$SF_USER" \
@@ -53,7 +53,7 @@ jobs:
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             status --verbose || exit 1
 
-          # 2) First-run marker logic
+          # First-run marker logic
           if [ ! -f ../.first_run_done ]; then
             echo "🧪 FIRST RUN: dry-run + changelogSync"
 
@@ -88,7 +88,7 @@ jobs:
             exit 0
           fi
 
-          # 3) All subsequent runs: clear checksums + real update
+          # All subsequent runs: clear checksums + real update
           echo "🧹 Clearing checksums for changed files"
           ./../liquibase-cli/liquibase \
             --url="$URL" \
