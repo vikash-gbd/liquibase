@@ -48,16 +48,16 @@ jobs:
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             status --verbose || exit 1
 
-          # Detect if any changesets have run yet (history --count 1)
+          # FIRST-RUN detection: history --limit=1 returns empty
           if ! ./../liquibase-cli/liquibase \
               --url="$URL" \
               --username="$SF_USER" \
               --password="$SF_PASSWORD" \
               --changelog-file=changelog/liquibase-master.xml \
               --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              history --count 1 | grep -q .; then
+              history --limit=1 | grep -q .; then
 
-            echo "🧪 First run detected: performing dry-run + changelogSync"
+            echo "🧪 First run detected: dry-run + changelogSync"
             ./../liquibase-cli/liquibase \
               --url="$URL" \
               --username="$SF_USER" \
