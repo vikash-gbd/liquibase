@@ -24,11 +24,7 @@ jobs:
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
-      - name: Verify Liquibase version
-        run: liquibase-cli/liquibase --version
-
-      - name: Run Liquibase (dry-run for first push, update for rest)
-        working-directory: ${{ github.workspace }}
+      - name: Deploy to Snowflake
         env:
           SF_ACCOUNT:    ${{ secrets.SF_ACCOUNT }}
           SF_DATABASE:   ${{ secrets.SF_DATABASE }}
@@ -38,34 +34,53 @@ jobs:
           SF_USER:       ${{ secrets.SF_USER }}
           SF_PASSWORD:   ${{ secrets.SF_PASSWORD }}
         run: |
-          if [ -z "$SF_ACCOUNT" ]; then
-            echo "❌ ERROR: Missing Snowflake secret"
-            exit 1
-          fi
+          echo "🔧 Starting deployment process"
 
+          cd liquibase
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
-          ESC_PW=$(printf '%q' "$SF_PASSWORD")
-
-          BASE_CMD="liquibase-cli/liquibase \
-            --search-path='.' \
-            --changelog-file=liquibase/changelog/liquibase-master.xml \
-            --url=\"$URL\" \
-            --username='$SF_USER' \
-            --password='$ESC_PW' \
-            --driver=net.snowflake.client.jdbc.SnowflakeDriver"
-
-          echo "🔍 Validating changelogs & connection"
-          eval "$BASE_CMD status" || { echo "❌ Validation failed"; exit 1; }
+          
+          ./../liquibase-cli/liquibase \
+            --url="$URL" \
+            --username="$SF_USER" \
+            --password="$SF_PASSWORD" \
+            --changelog-file=changelog/liquibase-master.xml \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+            status --verbose || exit 1
 
           if [ "${{ github.run_number }}" = "1" ]; then
-            echo "🧪 First Run: Dry run only"
-            eval "$BASE_CMD updateSql" > dry-run-output.sql
-            echo "✅ dry-run-output.sql created"
-            eval "$BASE_CMD changelogSync"
-          else
-            echo "🧹 Clearing checksums for updated changesets"
-            eval "$BASE_CMD clearCheckSums"
+            echo "🧪 First run: dry-run + changelogSync"
+            ./../liquibase-cli/liquibase \
+              --url="$URL" \
+              --username="$SF_USER" \
+              --password="$SF_PASSWORD" \
+              --changelog-file=changelog/liquibase-master.xml \
+              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+              updateSql > dry-run-output.sql
 
-            echo "🚀 Running Liquibase update"
-            eval "$BASE_CMD update"
+            echo "🔁 Syncing changelog without execution"
+            ./../liquibase-cli/liquibase \
+              --url="$URL" \
+              --username="$SF_USER" \
+              --password="$SF_PASSWORD" \
+              --changelog-file=changelog/liquibase-master.xml \
+              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+              changelogSync
+          else
+            echo "🧹 Clearing checksum if file content changed"
+            ./../liquibase-cli/liquibase \
+              --url="$URL" \
+              --username="$SF_USER" \
+              --password="$SF_PASSWORD" \
+              --changelog-file=changelog/liquibase-master.xml \
+              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+              clearCheckSums
+
+            echo "🚀 Executing changesets"
+            ./../liquibase-cli/liquibase \
+              --url="$URL" \
+              --username="$SF_USER" \
+              --password="$SF_PASSWORD" \
+              --changelog-file=changelog/liquibase-master.xml \
+              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+              update
           fi

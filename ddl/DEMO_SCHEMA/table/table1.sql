@@ -5,9 +5,9 @@ CREATE TABLE IF NOT EXISTS DEMO_SCHEMA.table1 (
     id INT PRIMARY KEY,
     name STRING,
     employee STRING,
-    department STRING
+    location STRING  -- new column
 );
 
 --changeset ravi:table1-insert
-INSERT INTO DEMO_SCHEMA.table1 (id, name, employee, created_at) 
-VALUES (1, 'Sample Data', 'Vikash', "it");
+INSERT INTO DEMO_SCHEMA.table1 (id, name, employee, location)
+VALUES (1, 'Sample Data', 'vikash', 'Bangalore');
