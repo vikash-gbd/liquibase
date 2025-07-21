@@ -3,14 +3,13 @@
     xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
-  <!-- Include all SQL under demo_db.demo_schema.table -->
   <includeAll path="../../ddl/demo_db/demo_schema/table"
               relativeToChangelogFile="true"
-              errorIfMissingOrEmpty="false"/>
+              errorIfMissingOrEmpty="false"
+              runOnChange="true"/>
 
-  <!-- Include all SQL under sales_db.customer_schema.table -->
   <includeAll path="../../ddl/sales_db/customer_schema/table"
               relativeToChangelogFile="true"
-              errorIfMissingOrEmpty="false"/>
-
+              errorIfMissingOrEmpty="false"
+              runOnChange="true"/>
 </databaseChangeLog>
