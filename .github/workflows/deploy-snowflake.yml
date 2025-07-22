@@ -2,25 +2,26 @@ name: Deploy to Snowflake
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
+
+permissions:
+  contents: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      SNOWFLAKE_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
-      SNOWFLAKE_USERNAME: ${{ secrets.SF_USER }}
-      SNOWFLAKE_PASSWORD: ${{ secrets.SF_PASSWORD }}
-      SNOWFLAKE_ROLE: ${{ secrets.SF_ROLE }}
-      SNOWFLAKE_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
-      SNOWFLAKE_DATABASE: ${{ secrets.SF_DATABASE }}
-      SNOWFLAKE_SCHEMA: ${{ secrets.SF_SCHEMA }}
-      LIQUIBASE_PROPS_FILE: ./liquibase.properties
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - name: Download Liquibase CLI
         run: |
@@ -28,14 +29,104 @@ jobs:
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
-      - name: Create .first_run_done if not exists
+      - name: Deploy to Snowflake
+        env:
+          SF_ACCOUNT:   ${{ secrets.SF_ACCOUNT }}
+          SF_DATABASE:  ${{ secrets.SF_DATABASE }}
+          SF_SCHEMA:    ${{ secrets.SF_SCHEMA }}
+          SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
+          SF_ROLE:      ${{ secrets.SF_ROLE }}
+          SF_USER:      ${{ secrets.SF_USER }}
+          SF_PASSWORD:  ${{ secrets.SF_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          echo "🔧 Starting deployment process"
+
+          URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
+
+          echo "📡 Checking connectivity..."
+          liquibase-cli/liquibase \
+            --url="$URL" \
+            --username="$SF_USER" \
+            --password="$SF_PASSWORD" \
+            --changelog-file=liquibase/changelog/liquibase-master.xml \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+            status --verbose || exit 1
+
           if [ ! -f .first_run_done ]; then
-            echo "First run: generating dry-run SQL and marking changelogs as synced"
-            liquibase-cli/liquibase updateSql
-            liquibase-cli/liquibase changelogSync
+            echo "🧪 FIRST RUN DETECTED"
+
+            echo "🔍 Identifying executed changesets..."
+            liquibase-cli/liquibase \
+              --url="$URL" \
+              --username="$SF_USER" \
+              --password="$SF_PASSWORD" \
+              --changelog-file=liquibase/changelog/liquibase-master.xml \
+              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+              history > history.txt
+
+            echo "🧾 Generating dry-run SQL only for unexecuted DDL (auto:1)..."
+            grep 'auto:1' liquibase/changelog/liquibase-master.xml | while read -r line; do
+              change_id=$(echo "$line" | grep -o 'id="[^"]*' | cut -d'"' -f2)
+              if ! grep -q "$change_id" history.txt; then
+                echo "⬇️ Running updateSql for DDL changeset: $change_id"
+                liquibase-cli/liquibase \
+                  --url="$URL" \
+                  --username="$SF_USER" \
+                  --password="$SF_PASSWORD" \
+                  --changelog-file=liquibase/changelog/liquibase-master.xml \
+                  --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+                  updateSql \
+                  --changesetAuthor=auto \
+                  --changesetId="$change_id" >> dry-run-output.sql
+              fi
+            done
+
+            echo "🛠️ Applying real update for DML (auto:2)..."
+            liquibase-cli/liquibase \
+              --url="$URL" \
+              --username="$SF_USER" \
+              --password="$SF_PASSWORD" \
+              --changelog-file=liquibase/changelog/liquibase-master.xml \
+              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+              update \
+              --changesetAuthor=auto \
+              --changesetId=2
+
+            echo "🧮 Marking all changes as synced"
+            liquibase-cli/liquibase \
+              --url="$URL" \
+              --username="$SF_USER" \
+              --password="$SF_PASSWORD" \
+              --changelog-file=liquibase/changelog/liquibase-master.xml \
+              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+              changelogSync
+
+            echo "📌 Saving .first_run_done"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
             touch .first_run_done
-          else
-            echo "Subsequent run: applying changes"
-            liquibase-cli/liquibase update
+            git add .first_run_done
+            git commit -m "chore: mark first run as completed"
+            git push origin main
+
+            echo "✅ First-run logic complete."
+            exit 0
           fi
+
+          echo "🔄 SUBSEQUENT RUN: Clearing checksums and running full update"
+          liquibase-cli/liquibase \
+            --url="$URL" \
+            --username="$SF_USER" \
+            --password="$SF_PASSWORD" \
+            --changelog-file=liquibase/changelog/liquibase-master.xml \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+            clearCheckSums
+
+          liquibase-cli/liquibase \
+            --url="$URL" \
+            --username="$SF_USER" \
+            --password="$SF_PASSWORD" \
+            --changelog-file=liquibase/changelog/liquibase-master.xml \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+            update
