@@ -2,106 +2,74 @@ name: Deploy to Snowflake
 
 on:
   push:
-    branches: [ main ]
-
-permissions:
-  contents: write  # allow GitHub Actions bot to push
+    branches:
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      LIQUIBASE_PROPS_FILE: ./liquibase.properties
+      SNOWFLAKE_USERNAME: ${{ secrets.SNOWFLAKE_USERNAME }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SF_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      SF_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: true
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+      - name: ☕ Set up Java
+        uses: actions/setup-java@v3
         with:
-          distribution: temurin
           java-version: '17'
+          distribution: 'temurin'
 
-      - name: Download Liquibase CLI
+      - name: 📦 Download Liquibase CLI
         run: |
-          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
-          unzip -q liquibase.zip -d liquibase-cli
+          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz -o liquibase.tar.gz
+          mkdir -p liquibase-cli
+          tar -xzf liquibase.tar.gz -C liquibase-cli --strip-components=1
           chmod +x liquibase-cli/liquibase
 
-      - name: Deploy to Snowflake
-        env:
-          SF_ACCOUNT:   ${{ secrets.SF_ACCOUNT }}
-          SF_USER:      ${{ secrets.SF_USER }}
-          SF_PASSWORD:  ${{ secrets.SF_PASSWORD }}
-          SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
-          SF_ROLE:      ${{ secrets.SF_ROLE }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 🔍 Check if first run
+        id: check_first_run
         run: |
-          echo "🔧 Starting deployment..."
+          if [ -f .first_run_done ]; then
+            echo "first_run=false" >> $GITHUB_ENV
+          else
+            echo "first_run=true" >> $GITHUB_ENV
+          fi
 
-          # Find all .sql files under ddl/
-          find ddl -type f -name "*.sql" | while read sql_file; do
-            echo "📂 Processing: $sql_file"
+      - name: 🧪 Run dry-run SQL (first run only)
+        if: env.first_run == 'true'
+        run: |
+          echo "🔧 Running dry-run (updateSql)..."
+          liquibase-cli/liquibase \
+            updateSql \
+            --logLevel=info
 
-            # Extract components from path
-            DB_NAME=$(echo "$sql_file" | cut -d'/' -f2)
-            SCHEMA_NAME=$(echo "$sql_file" | cut -d'/' -f3)
-            TABLE_NAME=$(basename "$sql_file")
-            MARKER_FILE="ddl/${DB_NAME}/${SCHEMA_NAME}/table/.first_run_done/${TABLE_NAME}.done"
+      - name: ✅ Mark first run done & sync
+        if: env.first_run == 'true'
+        run: |
+          echo "📌 Marking changelog as synced..."
+          liquibase-cli/liquibase changelogSync --logLevel=info
+          touch .first_run_done
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+          mkdir -p ddl/sales_db/customer_schema/table/.first_run_done
+          touch ddl/sales_db/customer_schema/table/.first_run_done/customer_table.sql.done
+          git add .first_run_done ddl/**/.first_run_done/*.done || true
+          git commit -m "✅ Mark first run done [skip ci]" || true
+          git push https://${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }} HEAD:main || true
 
-            echo "🔍 DB: $DB_NAME | SCHEMA: $SCHEMA_NAME | TABLE: $TABLE_NAME"
-            echo "🧭 Marker: $MARKER_FILE"
-
-            URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${DB_NAME}&schema=${SCHEMA_NAME}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
-
-            if [ ! -f "$MARKER_FILE" ]; then
-              echo "🧪 FIRST RUN for $TABLE_NAME — Dry-run + changelogSync"
-
-              liquibase-cli/liquibase \
-                --url="$URL" \
-                --username="$SF_USER" \
-                --password="$SF_PASSWORD" \
-                --changelog-file=liquibase/changelog/liquibase-master.xml \
-                --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-                updateSql > dryrun_${TABLE_NAME}.sql
-
-              liquibase-cli/liquibase \
-                --url="$URL" \
-                --username="$SF_USER" \
-                --password="$SF_PASSWORD" \
-                --changelog-file=liquibase/changelog/liquibase-master.xml \
-                --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-                changelogSync
-
-              mkdir -p "$(dirname "$MARKER_FILE")"
-              touch "$MARKER_FILE"
-              git config user.name "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
-              git add "$MARKER_FILE"
-              git commit -m "chore: mark first run for $TABLE_NAME"
-              git push origin main
-              echo "✅ $TABLE_NAME dry-run complete."
-            else
-              echo "🔁 Subsequent run — apply real changes for $TABLE_NAME"
-
-              liquibase-cli/liquibase \
-                --url="$URL" \
-                --username="$SF_USER" \
-                --password="$SF_PASSWORD" \
-                --changelog-file=liquibase/changelog/liquibase-master.xml \
-                --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-                clearCheckSums
-
-              liquibase-cli/liquibase \
-                --url="$URL" \
-                --username="$SF_USER" \
-                --password="$SF_PASSWORD" \
-                --changelog-file=liquibase/changelog/liquibase-master.xml \
-                --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-                update
-
-              echo "✅ Changes applied for $TABLE_NAME"
-            fi
-
-          done
+      - name: 🚀 Apply changes (subsequent runs only)
+        if: env.first_run == 'false'
+        run: |
+          echo "🔁 Running Liquibase update..."
+          liquibase-cli/liquibase clearCheckSums
+          liquibase-cli/liquibase \
+            update \
+            --logLevel=info
