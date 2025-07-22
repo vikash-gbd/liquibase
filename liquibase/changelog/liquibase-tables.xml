@@ -7,7 +7,6 @@
         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
   <includeAll
-      path="../../ddl/sales_db/customer_schema/table"
-      relativeToChangelogFile="true" />
-
+    path="../../ddl/sales_db/customer_schema/table"
+    relativeToChangelogFile="true"/>
 </databaseChangeLog>

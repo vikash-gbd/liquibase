@@ -1,40 +1,29 @@
 name: Deploy to Snowflake
 
-on:
-  push:
-    branches: [main]
+on: push:
+  branches: [main]
 
-permissions:
-  contents: write
+permissions: contents: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with: persist-credentials: true
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: true
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+      - uses: actions/setup-java@v4
+        with: distribution: temurin, java-version: '17'
 
       - name: Download Liquibase CLI
         run: |
-          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
+          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip \
+            -o liquibase.zip
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
-      - name: Debug SQL folder contents
-        run: |
-          echo "Contents of table folder:"
-          ls -l ddl/sales_db/customer_schema/table || true
-
-      - name: Deploy to Snowflake via Liquibase
+      - name: First-run: smart dry-run vs real-run
+        if: "!exists('.first_run_done')"
         env:
           SF_ACCOUNT:   ${{ secrets.SF_ACCOUNT }}
           SF_DATABASE:  ${{ secrets.SF_DATABASE }}
@@ -43,18 +32,46 @@ jobs:
           SF_ROLE:      ${{ secrets.SF_ROLE }}
           SF_USER:      ${{ secrets.SF_USER }}
           SF_PASSWORD:  ${{ secrets.SF_PASSWORD }}
-          LIQUIBASE_SNOWFLAKE_ROLE:   ${{ secrets.SF_ROLE }}
-          LIQUIBASE_SNOWFLAKE_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
         run: |
-          echo "🔧 Building JDBC URL"
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
 
-          echo "🔄 Running Liquibase update"
           liquibase-cli/liquibase \
             --url="$URL" \
             --username="$SF_USER" \
             --password="$SF_PASSWORD" \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-            update
+            --changelog-file=liquibase/changelog/liquibase-master.xml \
+            update-sql --output-file=dry-run.sql
 
-          echo "✅ Liquibase update finished"
+          if grep -q "CREATE OR REPLACE TABLE sales_db.customer_schema.customer_table" dry-run.sql; then
+            echo "▶️ Real change detected — running actual update"
+            liquibase-cli/liquibase \
+              --url="$URL" \
+              --username="$SF_USER" \
+              --password="$SF_PASSWORD" \
+              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+              --changelog-file=liquibase/changelog/liquibase-master.xml \
+              update
+
+            touch .first_run_done
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add .first_run_done
+            git commit -m "chore: mark first-run complete"
+            git push origin main
+          else
+            echo "✅ Table exists — dry-run only"
+          fi
+
+      - name: Subsequent runs — always real update
+        if: exists('.first_run_done')
+        env: *same as above*
+        run: |
+          URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
+          liquibase-cli/liquibase \
+            --url="$URL" \
+            --username="$SF_USER" \
+            --password="$SF_PASSWORD" \
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+            --changelog-file=liquibase/changelog/liquibase-master.xml \
+            update
