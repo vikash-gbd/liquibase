@@ -16,12 +16,9 @@ ALTER TABLE sales_db.customer_schema.customer_table ADD COLUMN created_at TIMEST
 
 
 --changeset auto:4
---preconditions onFail:MARK_RAN
---precondition-sql-check expectedResult=0
-  SELECT COUNT(*) 
-  FROM information_schema.tables 
-  WHERE table_schema = 'CUSTOMER_SCHEMA' 
-    AND table_name = 'PATIENT_TABLE'
+--preconditions onFail:WARN 
+--precondition-sql-check expectedResult:0 SELECT COUNT(*) FROM example_table
+--comment: /* Comments should go after the precondition. Otherwise, Liquibase returns an error. */
 
 CREATE OR REPLACE TABLE sales_db.customer_schema.patient_table (
   id INT,
