@@ -2,25 +2,25 @@ name: Deploy to Snowflake
 
 on:
   push:
-    branches: [ main ]
-
-permissions:
-  contents: write  # allow GitHub Actions bot to push
+    branches: [main]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: true
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
+      SNOWFLAKE_USERNAME: ${{ secrets.SF_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SF_PASSWORD }}
 
-      - name: Set up Java 17
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
 
       - name: Download Liquibase CLI
@@ -29,79 +29,33 @@ jobs:
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
-      - name: Deploy to Snowflake
-        env:
-          SF_ACCOUNT:   ${{ secrets.SF_ACCOUNT }}
-          SF_USER:      ${{ secrets.SF_USER }}
-          SF_PASSWORD:  ${{ secrets.SF_PASSWORD }}
-          SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
-          SF_ROLE:      ${{ secrets.SF_ROLE }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up marker
+        id: marker
         run: |
-          echo "🔧 Starting deployment..."
+          if [ -f ddl/sales_db/customer_schema/table/.first_run_done ]; then
+            echo "first_run=false" >> $GITHUB_OUTPUT
+          else
+            echo "first_run=true" >> $GITHUB_OUTPUT
+          fi
 
-          # Find all .sql files under ddl/
-          find ddl -type f -name "*.sql" | while read sql_file; do
-            echo "📂 Processing: $sql_file"
+      - name: Dry-run (first time only)
+        if: steps.marker.outputs.first_run == 'true'
+        run: |
+          ./liquibase-cli/liquibase \
+            --defaultsFile=liquibase.properties \
+            --changeLogFile=liquibase/changelog/liquibase-master.xml \
+            updateSql > dryrun_output.sql
+          ./liquibase-cli/liquibase \
+            --defaultsFile=liquibase.properties \
+            --changeLogFile=liquibase/changelog/liquibase-master.xml \
+            changelogSync
+          mkdir -p ddl/sales_db/customer_schema/table/.first_run_done
+          touch ddl/sales_db/customer_schema/table/.first_run_done/customer_table.sql.done
 
-            # Extract components from path
-            DB_NAME=$(echo "$sql_file" | cut -d'/' -f2)
-            SCHEMA_NAME=$(echo "$sql_file" | cut -d'/' -f3)
-            TABLE_NAME=$(basename "$sql_file")
-            MARKER_FILE="ddl/${DB_NAME}/${SCHEMA_NAME}/table/.first_run_done/${TABLE_NAME}.done"
-
-            echo "🔍 DB: $DB_NAME | SCHEMA: $SCHEMA_NAME | TABLE: $TABLE_NAME"
-            echo "🧭 Marker: $MARKER_FILE"
-
-            URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${DB_NAME}&schema=${SCHEMA_NAME}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
-
-            if [ ! -f "$MARKER_FILE" ]; then
-              echo "🧪 FIRST RUN for $TABLE_NAME — Dry-run + changelogSync"
-
-              liquibase-cli/liquibase \
-                --url="$URL" \
-                --username="$SF_USER" \
-                --password="$SF_PASSWORD" \
-                --changelog-file=liquibase/changelog/liquibase-master.xml \
-                --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-                updateSql > dryrun_${TABLE_NAME}.sql
-
-              liquibase-cli/liquibase \
-                --url="$URL" \
-                --username="$SF_USER" \
-                --password="$SF_PASSWORD" \
-                --changelog-file=liquibase/changelog/liquibase-master.xml \
-                --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-                changelogSync
-
-              mkdir -p "$(dirname "$MARKER_FILE")"
-              touch "$MARKER_FILE"
-              git config user.name "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
-              git add "$MARKER_FILE"
-              git commit -m "chore: mark first run for $TABLE_NAME"
-              git push origin main
-              echo "✅ $TABLE_NAME dry-run complete."
-            else
-              echo "🔁 Subsequent run — apply real changes for $TABLE_NAME"
-
-              liquibase-cli/liquibase \
-                --url="$URL" \
-                --username="$SF_USER" \
-                --password="$SF_PASSWORD" \
-                --changelog-file=liquibase/changelog/liquibase-master.xml \
-                --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-                clearCheckSums
-
-              liquibase-cli/liquibase \
-                --url="$URL" \
-                --username="$SF_USER" \
-                --password="$SF_PASSWORD" \
-                --changelog-file=liquibase/changelog/liquibase-master.xml \
-                --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-                update
-
-              echo "✅ Changes applied for $TABLE_NAME"
-            fi
-
-          done
+      - name: Real deployment (next runs)
+        if: steps.marker.outputs.first_run == 'false'
+        run: |
+          ./liquibase-cli/liquibase \
+            --defaultsFile=liquibase.properties \
+            --changeLogFile=liquibase/changelog/liquibase-master.xml \
+            update

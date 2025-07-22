@@ -4,13 +4,8 @@
     xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
-    <changeSet id="customer_table" author="liquibase" runOnChange="true">
-        <sqlFile
-            path="../../ddl/sales_db/customer_schema/table/customer_table.sql"
-            relativeToChangelogFile="true"
-            endDelimiter=";"
-            splitStatements="true"
-            stripComments="true"/>
-    </changeSet>
-
+    <includeAll
+        path="../../ddl/sales_db/customer_schema/table"
+        relativeToChangelogFile="true"
+        errorIfMissingOrEmpty="true" />
 </databaseChangeLog>
