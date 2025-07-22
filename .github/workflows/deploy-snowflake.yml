@@ -12,16 +12,15 @@ jobs:
       SNOWFLAKE_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
       SNOWFLAKE_USERNAME: ${{ secrets.SF_USER }}
       SNOWFLAKE_PASSWORD: ${{ secrets.SF_PASSWORD }}
+      SNOWFLAKE_ROLE: ${{ secrets.SF_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
+      SNOWFLAKE_DATABASE: ${{ secrets.SF_DATABASE }}
+      SNOWFLAKE_SCHEMA: ${{ secrets.SF_SCHEMA }}
+      LIQUIBASE_PROPS_FILE: ./liquibase.properties
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Download Liquibase CLI
         run: |
@@ -29,33 +28,14 @@ jobs:
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
-      - name: Set up marker
-        id: marker
+      - name: Create .first_run_done if not exists
         run: |
-          if [ -f ddl/sales_db/customer_schema/table/.first_run_done ]; then
-            echo "first_run=false" >> $GITHUB_OUTPUT
+          if [ ! -f .first_run_done ]; then
+            echo "First run: generating dry-run SQL and marking changelogs as synced"
+            liquibase-cli/liquibase updateSql
+            liquibase-cli/liquibase changelogSync
+            touch .first_run_done
           else
-            echo "first_run=true" >> $GITHUB_OUTPUT
+            echo "Subsequent run: applying changes"
+            liquibase-cli/liquibase update
           fi
-
-      - name: Dry-run (first time only)
-        if: steps.marker.outputs.first_run == 'true'
-        run: |
-          ./liquibase-cli/liquibase \
-            --defaultsFile=liquibase.properties \
-            --changeLogFile=liquibase/changelog/liquibase-master.xml \
-            updateSql > dryrun_output.sql
-          ./liquibase-cli/liquibase \
-            --defaultsFile=liquibase.properties \
-            --changeLogFile=liquibase/changelog/liquibase-master.xml \
-            changelogSync
-          mkdir -p ddl/sales_db/customer_schema/table/.first_run_done
-          touch ddl/sales_db/customer_schema/table/.first_run_done/customer_table.sql.done
-
-      - name: Real deployment (next runs)
-        if: steps.marker.outputs.first_run == 'false'
-        run: |
-          ./liquibase-cli/liquibase \
-            --defaultsFile=liquibase.properties \
-            --changeLogFile=liquibase/changelog/liquibase-master.xml \
-            update
