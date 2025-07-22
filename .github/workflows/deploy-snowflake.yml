@@ -11,7 +11,6 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,16 +31,16 @@ jobs:
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
-      - name: First-run: dry-run or apply
-        if: "!exists('.first_run_done')"
+      - name: First run → dry-run and conditional apply
+        if: "!contains(hashFiles('.first_run_done'), '')"
         env:
-          SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
-          SF_DATABASE: ${{ secrets.SF_DATABASE }}
-          SF_SCHEMA: ${{ secrets.SF_SCHEMA }}
+          SF_ACCOUNT:   ${{ secrets.SF_ACCOUNT }}
+          SF_DATABASE:  ${{ secrets.SF_DATABASE }}
+          SF_SCHEMA:    ${{ secrets.SF_SCHEMA }}
           SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
-          SF_ROLE: ${{ secrets.SF_ROLE }}
-          SF_USER: ${{ secrets.SF_USER }}
-          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
+          SF_ROLE:      ${{ secrets.SF_ROLE }}
+          SF_USER:      ${{ secrets.SF_USER }}
+          SF_PASSWORD:  ${{ secrets.SF_PASSWORD }}
         run: |
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
 
@@ -54,7 +53,7 @@ jobs:
             update-sql --output-file=dry-run.sql
 
           if grep -q "CREATE OR REPLACE TABLE sales_db.customer_schema.customer_table" dry-run.sql; then
-            echo "Table missing → executing real update"
+            echo "🔨 Table missing — running real update"
             liquibase-cli/liquibase \
               --url="$URL" \
               --username="$SF_USER" \
@@ -67,25 +66,24 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add .first_run_done
-            git commit -m "chore: mark first run completed"
+            git commit -m "chore: mark first run complete"
             git push origin main
           else
-            echo "Table exists — dry-run only"
+            echo "✅ Table exists — dry-run only"
           fi
 
-      - name: Subsequent runs — always real update
-        if: exists('.first_run_done')
+      - name: Subsequent runs — always apply
+        if: contains(hashFiles('.first_run_done'), '')
         env:
-          SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
-          SF_DATABASE: ${{ secrets.SF_DATABASE }}
-          SF_SCHEMA: ${{ secrets.SF_SCHEMA }}
+          SF_ACCOUNT:   ${{ secrets.SF_ACCOUNT }}
+          SF_DATABASE:  ${{ secrets.SF_DATABASE }}
+          SF_SCHEMA:    ${{ secrets.SF_SCHEMA }}
           SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
-          SF_ROLE: ${{ secrets.SF_ROLE }}
-          SF_USER: ${{ secrets.SF_USER }}
-          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
+          SF_ROLE:      ${{ secrets.SF_ROLE }}
+          SF_USER:      ${{ secrets.SF_USER }}
+          SF_PASSWORD:  ${{ secrets.SF_PASSWORD }}
         run: |
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
-
           liquibase-cli/liquibase \
             --url="$URL" \
             --username="$SF_USER" \
