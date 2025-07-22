@@ -2,7 +2,7 @@ name: Deploy to Snowflake
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
 permissions:
   contents: write
@@ -10,9 +10,9 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
+
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           persist-credentials: true
@@ -29,9 +29,9 @@ jobs:
           unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
-      - name: Debug included folder contents
+      - name: Debug SQL folder contents
         run: |
-          echo "SQL files in ddl/sales_db/customer_schema/table:"
+          echo "Contents of table folder:"
           ls -l ddl/sales_db/customer_schema/table || true
 
       - name: Deploy to Snowflake via Liquibase
@@ -43,17 +43,18 @@ jobs:
           SF_ROLE:      ${{ secrets.SF_ROLE }}
           SF_USER:      ${{ secrets.SF_USER }}
           SF_PASSWORD:  ${{ secrets.SF_PASSWORD }}
+          LIQUIBASE_SNOWFLAKE_ROLE:   ${{ secrets.SF_ROLE }}
+          LIQUIBASE_SNOWFLAKE_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
         run: |
-          echo "🔧 Starting Liquibase deployment to Snowflake..."
-
+          echo "🔧 Building JDBC URL"
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
 
+          echo "🔄 Running Liquibase update"
           liquibase-cli/liquibase \
             --url="$URL" \
             --username="$SF_USER" \
             --password="$SF_PASSWORD" \
-            --changelog-file=liquibase/changelog/liquibase-master.xml \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             update
 
-          echo "✅ Liquibase update completed"
+          echo "✅ Liquibase update finished"
