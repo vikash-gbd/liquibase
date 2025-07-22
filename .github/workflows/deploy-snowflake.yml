@@ -68,10 +68,11 @@ jobs:
 
               touch "$marker"
 
-              # Setup Git credentials
-              git config user.name "vikash-gbd"
-              git config user.email "vikash.rathour@allen.in"
-              git remote set-url origin https://${{ secrets.GH_TOKEN }}@github.com/vikash-gbd/liquibase.git
+              git config --global user.name "GitHub Action"
+              git config --global user.email "action@github.com"
+
+              # Set auth with GH_TOKEN
+              git remote set-url origin https://x-access-token:$GH_TOKEN@github.com/vikash-gbd/liquibase.git
 
               git add "$marker"
               git commit -m "✅ Dry-run done for $file"
