@@ -17,7 +17,7 @@ ALTER TABLE sales_db.customer_schema.customer_table ADD COLUMN created_at TIMEST
 
 --changeset auto:4
 --preconditions onFail:MARK_RAN
---precondition-sql-check expectedResult:0 
+--precondition-sql-check expectedResult=0
   SELECT COUNT(*) 
   FROM information_schema.tables 
   WHERE table_schema = 'CUSTOMER_SCHEMA' 
