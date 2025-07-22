@@ -31,7 +31,7 @@ jobs:
 
       - name: Debug included folder contents
         run: |
-          echo "Listing SQL files under ddl/sales_db/customer_schema/table"
+          echo "SQL files in ddl/sales_db/customer_schema/table:"
           ls -l ddl/sales_db/customer_schema/table || true
 
       - name: Deploy to Snowflake via Liquibase
@@ -44,7 +44,7 @@ jobs:
           SF_USER:      ${{ secrets.SF_USER }}
           SF_PASSWORD:  ${{ secrets.SF_PASSWORD }}
         run: |
-          echo "🔧 Starting Liquibase deployment"
+          echo "🔧 Starting Liquibase deployment to Snowflake..."
 
           URL="jdbc:snowflake://${SF_ACCOUNT}.snowflakecomputing.com/?db=${SF_DATABASE}&schema=${SF_SCHEMA}&warehouse=${SF_WAREHOUSE}&role=${SF_ROLE}"
 
