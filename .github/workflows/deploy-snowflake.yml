@@ -29,9 +29,8 @@ jobs:
 
       - name: 📦 Download Liquibase CLI
         run: |
-          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.tar.gz -o liquibase.tar.gz
-          mkdir -p liquibase-cli
-          tar -xzf liquibase.tar.gz -C liquibase-cli --strip-components=1
+          curl -sL https://github.com/liquibase/liquibase/releases/download/v4.24.0/liquibase-4.24.0.zip -o liquibase.zip
+          unzip -q liquibase.zip -d liquibase-cli
           chmod +x liquibase-cli/liquibase
 
       - name: 🔍 Check if first run
